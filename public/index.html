@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bridge</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header id="topbar">
+    <h1>Bridge</h1>
+    <p id="status"></p>
+    <span id="clock"></span>
+    <div id="auction"></div>
+  </header>
+
+  <!-- The table fills the screen. Seats hug the edges; played cards land in the center cross. -->
+        <main id="table">
+    <!-- Behind the cards: a spotlight on the active player and a faint trump emblem. -->
+    <div id="spotlight"></div>
+    <div id="trump-emblem"></div>
+
+    <!-- One section per logical seat (N/E/S/W). ui.js assigns each a screen position so the viewer sits at the bottom. -->
+    <section class="seat" id="seat-N"><div id="hand-N" class="hand"></div><h2 id="head-N" class="seat-name">North</h2><div class="call" id="call-N"></div><div class="seat-controls" id="ctl-N"></div></section>
+    <section class="seat" id="seat-W"><h2 id="head-W" class="seat-name">West</h2><div id="hand-W" class="hand"></div><div class="call" id="call-W"></div><div class="seat-controls" id="ctl-W"></div></section>
+    <div id="trick" class="trick"></div>
+    <section class="seat" id="seat-E"><h2 id="head-E" class="seat-name">East</h2><div id="hand-E" class="hand"></div><div class="call" id="call-E"></div><div class="seat-controls" id="ctl-E"></div></section>
+    <section class="seat" id="seat-S"><div id="hand-S" class="hand"></div><h2 id="head-S" class="seat-name">South</h2><div class="call" id="call-S"></div><div class="seat-controls" id="ctl-S"></div></section>
+  </main>
+
+  <footer id="bottombar">
+    <div id="controls">
+      <!-- A bid is a level (1-7) plus a strain. Pick the level with the stepper, then click a strain to bid it. -->
+      <div id="bidding">
+        <button id="level-down">&minus;</button>
+        <span class="level-display">Level <strong id="level">1</strong></span>
+        <button id="level-up">+</button>
+        <button class="bid suit-C" data-strain="C">&clubs;</button>
+        <button class="bid suit-D" data-strain="D">&diams;</button>
+        <button class="bid suit-H" data-strain="H">&hearts;</button>
+        <button class="bid suit-S" data-strain="S">&spades;</button>
+        <button class="bid" data-strain="NT">NT</button>
+        <button id="pass">Pass</button>
+      </div>
+      <button id="new-deal">New Deal</button>
+      <button id="reset-all" title="Wipe scores and start over (temporary)">Reset</button>
+      <button id="leave-seat" disabled>Leave Seat</button>
+    </div>
+    <div id="scoreboard"></div>
+  </footer>
+
+  <!-- Scoreboard: the side tab toggles it during play; it also pops up after each deal. -->
+  <button id="sb-toggle" aria-label="Toggle scoreboard">Scoreboard</button>
+  <div id="sb-overlay" hidden>
+    <div id="sb-panel" role="dialog" aria-modal="true" aria-label="Scoreboard">
+      <h2>Scoreboard</h2>
+      <div id="sb-content"></div>
+      <button id="sb-next">Next</button>
+    </div>
+  </div>
+
+  <!-- Socket.IO client, served automatically by the server -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- type="module" enables import/export. Modules only load over http, not file://, which is why you must run a server. -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "bridge-online",
+  "version": "0.1.0",
+  "description": "Online bridge (build 1: server spine over Socket.IO)",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

@@ -1,0 +1,304 @@
+/* styles.css - dark theme matching the site palette. Cards are opaque, outlined in their suit color:
+   red for hearts/diamonds, white for spades/clubs. Selectable cards read brighter than the rest. */
+
+:root {
+  --color-bg: #111214;
+  --color-surface: #1b1d20;
+  --color-text: #eaeaea;
+  --color-muted: #a0a0a0;
+  --color-accent: #C5283D;
+  --color-border: #2a2d31;
+  --color-accent-text: #DC566A;
+
+  --suit-red: var(--color-accent-text); /* hearts, diamonds */
+  --suit-white: var(--color-text);      /* spades, clubs */
+
+  --card-w: clamp(32px, 4.2vw, 54px);
+  --card-h: calc(var(--card-w) * 1.4);
+  --radius: calc(var(--card-w) * 0.12);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* ---- Top and bottom bars ---- */
+#topbar, #bottombar {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+#bottombar { border-top: 1px solid var(--color-border); border-bottom: none; justify-content: space-between; }
+
+h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  font-size: 1.4rem;
+  letter-spacing: 0.06em;
+  color: var(--color-accent-text);
+}
+
+#status { margin: 0; font-size: 0.85rem; color: var(--color-text); }
+#auction { font-size: 0.8rem; color: var(--color-muted); margin-left: auto; }
+
+/* ---- Controls ---- */
+#controls { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.level-display { font-size: 0.85rem; color: var(--color-text); }
+
+button {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+button:hover:not(:disabled) { border-color: var(--color-accent); background: #24272c; }
+#controls button:disabled { opacity: 0.6; cursor: default; }
+.hand .card:disabled { opacity: 1; }
+
+.bid { min-width: 2.4rem; font-size: 1.05rem; }
+.bid.suit-C, .bid.suit-S { color: var(--suit-white); }
+.bid.suit-D, .bid.suit-H { color: var(--suit-red); }
+#new-deal { border-color: var(--color-accent); }
+
+#scoreboard { font-size: 0.82rem; color: var(--color-muted); white-space: nowrap; }
+
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* ---- The table ---- */
+#table {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    ".    top    ."
+    "left trick right"
+    ".    bottom .";
+  gap: 0.25rem;
+  padding: 0.5rem;
+  overflow: hidden; /* never let a tall side hand push the layout around */
+  /* Felt darker than the cards so the opaque surface-toned cards clearly stand out. */
+  background: radial-gradient(130% 100% at 50% 50%, #0f1012 0%, #070809 75%);
+}
+
+.seat { display: flex; align-items: center; justify-content: center; gap: 0.35rem; min-width: 0; position: relative; z-index: 1; }
+.pos-top    { grid-area: top;    align-self: start; flex-direction: column; }
+.pos-bottom { grid-area: bottom; align-self: end;   flex-direction: column; }
+.pos-left   { grid-area: left;   justify-self: start; flex-direction: row; }
+.pos-right  { grid-area: right;  justify-self: end;   flex-direction: row; }
+
+.seat-name {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.pos-left .seat-name, .pos-right .seat-name { writing-mode: vertical-rl; }
+
+/* Hands: north/south fan horizontally, west/east stack vertically. */
+.hand { display: flex; }
+.pos-top .hand, .pos-bottom .hand { flex-direction: row; min-height: var(--card-h); }
+.pos-left .hand, .pos-right .hand { flex-direction: column; min-width: var(--card-w); }
+
+/* Face-up hands (you and the revealed dummy): light cascade, each card clearly on top of the previous. */
+.pos-top .hand.spread .card + .card, .pos-bottom .hand.spread .card + .card { margin-left: calc(var(--card-w) * -0.30); }
+.pos-left .hand.spread .card + .card, .pos-right .hand.spread .card + .card { margin-top:  calc(var(--card-h) * -0.72); }
+
+/* Face-down opponent hands: compact stack, one card resting on another. */
+.pos-top .hand.stacked .card + .card, .pos-bottom .hand.stacked .card + .card { margin-left: calc(var(--card-w) * -0.90); }
+.pos-left .hand.stacked .card + .card, .pos-right .hand.stacked .card + .card { margin-top:  calc(var(--card-h) * -0.86); }
+
+/* ---- Cards ---- */
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: var(--radius);
+  background: #23262b; /* solid, clearly lighter than the felt so cards never blend */
+  border: 2px solid var(--color-border);
+  padding: 0;
+  position: relative;
+  flex: 0 0 auto;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.7);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Face content and per-suit color: symbol and outline share the suit's color. */
+.card.face.red   { color: var(--suit-red);   border-color: var(--suit-red); }
+.card.face.black { color: var(--suit-white); border-color: var(--suit-white); }
+.card .idx {
+  position: absolute;
+  top: 4%;
+  left: 8%;
+  font-size: calc(var(--card-w) * 0.30);
+  font-weight: 700;
+  line-height: 0.95;
+  text-align: center;
+}
+.card .pip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--card-w) * 0.62);
+  opacity: 1; /* non-transparent */
+}
+
+/* Card back: framed lattice in the accent color. */
+.card.back {
+  background: repeating-linear-gradient(45deg, var(--color-surface), var(--color-surface) 6px, var(--color-border) 6px, var(--color-border) 12px);
+  border: 2px solid var(--color-accent);
+}
+
+/* Playable cards jump out with a distinctly lighter fill, a brighter outline, and a strong suit-colored glow.
+   Non-playable cards keep their solid base tone, so nothing dims toward the felt and overlaps stay clean. */
+.hand .card:not(:disabled) { background: #3b424c; cursor: pointer; }
+.hand .card.face.red:not(:disabled)   { border-color: #ff6b7e; box-shadow: 0 0 12px 2px rgba(220, 86, 106, 0.75), 0 2px 8px rgba(0,0,0,0.6); }
+.hand .card.face.black:not(:disabled) { border-color: #ffffff; box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.55), 0 2px 8px rgba(0,0,0,0.6); }
+.hand .card:not(:disabled):hover { z-index: 20; background: #49515d; }
+
+/* ---- Center trick, one card per seat around a cross ---- */
+.trick {
+  grid-area: trick;
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  justify-self: center;
+  width: calc(var(--card-w) * 3.0);
+  height: calc(var(--card-h) * 3.0);
+}
+.slot { position: absolute; }
+.slot.pos-top    { top: 0; left: 50%; transform: translateX(-50%); }
+.slot.pos-bottom { bottom: 0; left: 50%; transform: translateX(-50%); }
+.slot.pos-left   { left: 0; top: 50%; transform: translateY(-50%); }
+.slot.pos-right  { right: 0; top: 50%; transform: translateY(-50%); }
+.slot .card { box-shadow: 0 3px 10px rgba(0,0,0,0.8); }
+
+/* The one motion moment: the newest card slides in from its own player's side. */
+@keyframes fly-top    { from { transform: translateY(-220%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fly-bottom { from { transform: translateY(220%);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fly-left   { from { transform: translateX(-260%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fly-right  { from { transform: translateX(260%);  opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.card.fly-top    { animation: fly-top 0.4s ease-out; }
+.card.fly-bottom { animation: fly-bottom 0.4s ease-out; }
+.card.fly-left   { animation: fly-left 0.4s ease-out; }
+.card.fly-right  { animation: fly-right 0.4s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+  .card.fly-top, .card.fly-bottom, .card.fly-left, .card.fly-right { animation: none; }
+}
+/* ---- Scoreboard: side tab + popup panel ---- */
+#sb-toggle {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+  writing-mode: vertical-rl; padding: 0.7rem 0.4rem;
+  border-radius: 6px 0 0 6px; border-color: var(--color-accent);
+  letter-spacing: 0.06em; z-index: 50;
+}
+
+#sb-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+#sb-overlay[hidden] { display: none; }
+
+#sb-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1.2rem 1.4rem;
+  min-width: 360px; max-width: 92vw; max-height: 85vh; overflow: auto;
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+}
+#sb-panel h2 {
+  margin: 0 0 0.8rem; font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600; color: var(--color-accent-text);
+}
+
+.sb-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.sb-table th, .sb-table td { padding: 0.35rem 0.7rem; text-align: right; border-bottom: 1px solid var(--color-border); }
+.sb-table th:nth-child(2), .sb-table td:nth-child(2) { text-align: left; }
+.sb-table thead th { color: var(--color-muted); font-weight: 600; }
+.sb-table tfoot td { font-weight: 700; color: var(--color-text); border-top: 2px solid var(--color-border); border-bottom: none; }
+.sb-empty { color: var(--color-muted); margin: 0; }
+
+#sb-next { margin-top: 1.1rem; border-color: var(--color-accent); }
+
+.sb-rubber { margin: 0 0 0.9rem; color: var(--color-text); font-size: 0.9rem; line-height: 1.5; }
+.sb-rubber strong { color: var(--color-accent-text); }
+
+/* ---- Active-player spotlight (behind the cards) ---- */
+#spotlight {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  transition: background 0.25s ease;
+}
+/* A pool of light near the active seat, fading toward the center of the table. */
+.spot-top    { background: radial-gradient(ellipse 42% 55% at 50% 14%, rgba(255, 250, 235, 0.16), transparent 72%); }
+.spot-bottom { background: radial-gradient(ellipse 42% 55% at 50% 86%, rgba(255, 250, 235, 0.16), transparent 72%); }
+.spot-left   { background: radial-gradient(ellipse 55% 42% at 12% 50%, rgba(255, 250, 235, 0.16), transparent 72%); }
+.spot-right  { background: radial-gradient(ellipse 55% 42% at 88% 50%, rgba(255, 250, 235, 0.16), transparent 72%); }
+
+/* ---- Trump emblem (behind the played cards) ---- */
+#trump-emblem {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(6rem, 24vh, 15rem); line-height: 1; opacity: 0.10;
+}
+#trump-emblem.red { color: var(--suit-red); }
+#trump-emblem.white { color: var(--suit-white); }
+#trump-emblem.nt { color: var(--color-muted); font-size: clamp(3rem, 12vh, 7rem); font-family: Georgia, serif; letter-spacing: 0.05em; }
+
+/* ---- Each player's latest call, shown just toward the center from their hand ---- */
+.call {
+  position: absolute; z-index: 2;
+  padding: 0.12rem 0.5rem; border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5); border: 1px solid var(--color-border);
+  font-size: 0.85rem; white-space: nowrap;
+}
+.call.pass { color: var(--color-muted); }
+.call.red { color: var(--suit-red); }
+.call.white { color: var(--suit-white); }
+.pos-top .call    { left: 50%; top: calc(100% + 4px); transform: translateX(-50%); }
+.pos-bottom .call { left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); }
+.pos-left .call   { top: 50%; left: calc(100% + 6px); transform: translateY(-50%); }
+.pos-right .call  { top: 50%; right: calc(100% + 6px); transform: translateY(-50%); }
+
+/* Claimable seat labels (multiplayer): click to sit or leave. */
+
+
+/* Turn clock in the top bar. */
+#clock { font-size: 0.85rem; color: var(--color-muted); min-width: 2.5rem; }
+#clock.low { color: var(--color-accent-text); font-weight: 600; }
+
+/* Per-seat controls (sit / leave / add-bot / remove-bot) and the temporary Reset button. */
+.seat-controls { display: flex; gap: 0.25rem; justify-content: center; flex-wrap: wrap; }
+.seatbtn {
+  font: inherit; font-size: 0.72rem; padding: 0.15rem 0.45rem;
+  color: var(--color-text); background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: 5px; cursor: pointer;
+}
+.seatbtn:hover { border-color: var(--color-accent); }
+#reset-all { border-color: var(--color-accent); }

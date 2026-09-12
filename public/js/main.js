@@ -63,6 +63,8 @@ function onCardClick(card) {
 document.querySelectorAll('.bid').forEach((btn) =>
   btn.addEventListener('click', () => socket.emit('bid', { level: selectedLevel, strain: btn.dataset.strain })));
 document.getElementById('pass').addEventListener('click', () => socket.emit('pass'));
+document.getElementById('dbl').addEventListener('click', () => socket.emit('double'));
+document.getElementById('redbl').addEventListener('click', () => socket.emit('redouble'));
 document.getElementById('new-deal').addEventListener('click', () => socket.emit('newDeal'));
 
 // Seat controls: Sit / Leave / +Bot / -Bot buttons carry data-action and data-seat.

@@ -20,7 +20,8 @@ export function newGame(round = 1) {
     bids: [],                  // auction history: { seat, pass:true } or { seat, level, strain }
     highestBid: null,          // { seat, level, strain }
     passes: 0,                 // consecutive passes
-    contract: null,            // { level, strain, declarer }
+    doubled: 0,                // 0 none, 1 doubled, 2 redoubled (applies to the current highest bid)
+    contract: null,            // { level, strain, declarer, doubled }
     currentTrick: [],          // array of { seat, card }
     leader: null,              // who leads the current trick
     tricksWon: { NS: 0, EW: 0 },
@@ -57,6 +58,35 @@ export function makeBid(game, seat, level, strain) {
   if (game.turn !== seat || !isLegalBid(game, level, strain)) return;
   game.bids.push({ seat, level, strain });
   game.highestBid = { seat, level, strain };
+  game.doubled = 0; // a new contract bid clears any double
+  game.passes = 0;
+  advanceAuction(game);
+}
+
+// Double is legal against an opponent's current (undoubled) contract bid.
+export function isLegalDouble(game, seat) {
+  if (game.phase !== 'bidding' || !game.highestBid || game.doubled !== 0) return false;
+  return PARTNERSHIPS[game.highestBid.seat] !== PARTNERSHIPS[seat];
+}
+
+// Redouble is legal when your side's contract has been doubled by an opponent.
+export function isLegalRedouble(game, seat) {
+  if (game.phase !== 'bidding' || !game.highestBid || game.doubled !== 1) return false;
+  return PARTNERSHIPS[game.highestBid.seat] === PARTNERSHIPS[seat];
+}
+
+export function makeDouble(game, seat) {
+  if (game.turn !== seat || !isLegalDouble(game, seat)) return;
+  game.bids.push({ seat, double: true });
+  game.doubled = 1;
+  game.passes = 0;
+  advanceAuction(game);
+}
+
+export function makeRedouble(game, seat) {
+  if (game.turn !== seat || !isLegalRedouble(game, seat)) return;
+  game.bids.push({ seat, redouble: true });
+  game.doubled = 2;
   game.passes = 0;
   advanceAuction(game);
 }
@@ -82,7 +112,7 @@ function finalizeContract(game) {
   for (const b of game.bids) {
     if (!b.pass && PARTNERSHIPS[b.seat] === side && b.strain === strain) { declarer = b.seat; break; }
   }
-  game.contract = { level, strain, declarer };
+  game.contract = { level, strain, declarer, doubled: game.doubled };
   game.dummy = nextSeat(nextSeat(declarer));
   game.trump = strain;
   game.leader = nextSeat(declarer); // opening lead comes from the player to declarer's left

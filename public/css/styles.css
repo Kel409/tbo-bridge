@@ -90,7 +90,7 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
     ".    top    ."
     "left trick right"
@@ -154,8 +154,12 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   font-size: calc(var(--card-w) * 0.30);
   font-weight: 700;
   line-height: 0.95;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+/* On the vertical side hands only the top sliver shows, so put rank and suit on ONE line. */
+.pos-left .card .idx, .pos-right .card .idx { flex-direction: row; gap: 1px; align-items: baseline; }
 .card .pip {
   position: absolute;
   inset: 0;
@@ -274,13 +278,17 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 /* ---- Each player's latest call, shown just toward the center from their hand ---- */
 .call {
   position: absolute; z-index: 2;
-  padding: 0.12rem 0.5rem; border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5); border: 1px solid var(--color-border);
-  font-size: 0.85rem; white-space: nowrap;
+  display: flex; flex-direction: column; gap: 2px; align-items: center;
 }
-.call.pass { color: var(--color-muted); }
-.call.red { color: var(--suit-red); }
-.call.white { color: var(--suit-white); }
+.call-item {
+  padding: 0.05rem 0.4rem; border-radius: 5px;
+  background: rgba(0, 0, 0, 0.55); border: 1px solid var(--color-border);
+  font-size: 0.8rem; line-height: 1.3; white-space: nowrap;
+}
+.call-item.pass { color: var(--color-muted); }
+.call-item.red { color: var(--suit-red); }
+.call-item.white { color: var(--suit-white); }
+.call-item.dbl { color: var(--color-accent-text); font-weight: 700; }
 .pos-top .call    { left: 50%; top: calc(100% + 4px); transform: translateX(-50%); }
 .pos-bottom .call { left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); }
 .pos-left .call   { top: 50%; left: calc(100% + 6px); transform: translateY(-50%); }

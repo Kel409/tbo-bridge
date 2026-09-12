@@ -22,35 +22,56 @@ const UNDERTRICK_VUL = 100;    // per undertrick, undoubled
 const SIDE = { N: 'NS', S: 'NS', E: 'EW', W: 'EW' };
 const OTHER = { NS: 'EW', EW: 'NS' };
 
-// Value of `tricks` contracted tricks in a strain.
-function contractTrickValue(strain, tricks) {
+// Value of `tricks` contracted tricks in a strain (before any doubling multiplier).
+function baseTrickValue(strain, tricks) {
   if (strain === 'C' || strain === 'D') return tricks * MINOR_PER_TRICK;
   if (strain === 'H' || strain === 'S') return tricks * MAJOR_PER_TRICK;
   return tricks === 0 ? 0 : NT_FIRST + (tricks - 1) * NT_EXTRA; // NT
 }
 
-// Value of overtricks (undoubled): plain per-trick rate; NT overtricks score the major rate.
-function overtrickValue(strain, overtricks) {
+// Contracted-trick points (below the line). Doubling doubles them, redoubling quadruples them.
+function contractTrickValue(strain, level, doubled) {
+  return baseTrickValue(strain, level) * (doubled === 0 ? 1 : doubled === 1 ? 2 : 4);
+}
+
+// Overtrick points (above the line), by doubling state and vulnerability.
+function overtrickValue(strain, overtricks, vulnerable, doubled) {
   if (overtricks <= 0) return 0;
-  if (strain === 'C' || strain === 'D') return overtricks * MINOR_PER_TRICK;
-  return overtricks * MAJOR_PER_TRICK; // majors and NT both 30 per undoubled overtrick
+  if (doubled === 0) {
+    const per = (strain === 'C' || strain === 'D') ? MINOR_PER_TRICK : MAJOR_PER_TRICK; // majors and NT are 30
+    return overtricks * per;
+  }
+  const per = doubled === 1 ? (vulnerable ? 200 : 100) : (vulnerable ? 400 : 200); // doubled / redoubled
+  return overtricks * per;
+}
+
+// Undertrick penalty (above the line, to the defenders).
+function undertrickPenalty(undertricks, vulnerable, doubled) {
+  if (doubled === 0) return undertricks * (vulnerable ? UNDERTRICK_VUL : UNDERTRICK_NONVUL);
+  let total = 0;
+  for (let i = 1; i <= undertricks; i++) {
+    if (vulnerable) total += (i === 1) ? 200 : 300;
+    else total += (i === 1) ? 100 : (i <= 3 ? 200 : 300);
+  }
+  return doubled === 2 ? total * 2 : total; // redoubled = doubled x2
 }
 
 // Pure numeric breakdown of one contract's result. Does not know or care which team scores it.
 export function scoreContract(contract, declarerTricks, vulnerable) {
+  const doubled = contract.doubled || 0;
   const requiredTricks = contract.level + 6;
   const tricksOver = declarerTricks - requiredTricks; // signed: positive = overtricks, negative = undertricks
   const made = tricksOver >= 0;
 
   if (!made) {
-    const undertricks = Math.abs(tricksOver);
-    const penaltyPoints = undertricks * (vulnerable ? UNDERTRICK_VUL : UNDERTRICK_NONVUL);
-    return { made, tricksOver, contractPoints: 0, overtrickPoints: 0, penaltyPoints };
+    const penaltyPoints = undertrickPenalty(Math.abs(tricksOver), vulnerable, doubled);
+    return { made, tricksOver, contractPoints: 0, overtrickPoints: 0, insult: 0, penaltyPoints };
   }
 
-  const contractPoints = contractTrickValue(contract.strain, contract.level); // below the line
-  const overtrickPoints = overtrickValue(contract.strain, tricksOver);         // above the line
-  return { made, tricksOver, contractPoints, overtrickPoints, penaltyPoints: 0 };
+  const contractPoints = contractTrickValue(contract.strain, contract.level, doubled);       // below the line
+  const overtrickPoints = overtrickValue(contract.strain, tricksOver, vulnerable, doubled);   // above the line
+  const insult = doubled === 1 ? 50 : doubled === 2 ? 100 : 0;                                 // bonus for making a (re)doubled contract
+  return { made, tricksOver, contractPoints, overtrickPoints, insult, penaltyPoints: 0 };
 }
 
 // One row of the score log. countsTowardGame flags the game-points column (the 100 threshold).
@@ -69,6 +90,7 @@ export function scoreHand(contract, declarerTricks, vulnerable, round) {
   if (s.made) {
     rows.push(entry(round, declaringSide, 'contract', 'Contract tricks', s.contractPoints, true)); // below the line
     if (s.overtrickPoints > 0) rows.push(entry(round, declaringSide, 'overtricks', 'Overtricks', s.overtrickPoints, false));
+    if (s.insult > 0) rows.push(entry(round, declaringSide, 'insult', 'Doubled bonus', s.insult, false));
   } else {
     rows.push(entry(round, defendingSide, 'undertricks', 'Undertricks', s.penaltyPoints, false));
   }

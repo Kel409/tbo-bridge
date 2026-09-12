@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 import {
-  newGame, makeBid, makePass, playCard, pickAutoCard,
+  newGame, makeBid, makePass, makeDouble, makeRedouble, playCard, pickAutoCard,
   isLegal, isLegalBid, controllerOf, PARTNERSHIPS, SEATS,
 } from '../public/js/game.js';
 import { createLog, scoreHand, addEvents, extraBonusRow } from '../public/js/scoring.js';
@@ -139,7 +139,7 @@ function recordRound() {
     const declSide = PARTNERSHIPS[c.declarer];
     summary.diff = g.tricksWon[declSide] - (c.level + 6);
     summary.made = summary.diff >= 0;
-    summary.contract = `${c.level}${c.strain}`;
+    summary.contract = `${c.level}${c.strain}${c.doubled === 2 ? ' XX' : c.doubled === 1 ? ' X' : ''}`;
     summary.declarer = c.declarer;
   }
   room.rounds.push(summary);
@@ -317,6 +317,24 @@ io.on('connection', (socket) => {
     const g = room.game;
     if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
     makePass(g, seat);
+    maybeFinishRound();
+    afterMove(false);
+  });
+
+  socket.on('double', () => {
+    const seat = seatOfClient(socket.data.clientId);
+    const g = room.game;
+    if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
+    makeDouble(g, seat); // no-ops if illegal
+    maybeFinishRound();
+    afterMove(false);
+  });
+
+  socket.on('redouble', () => {
+    const seat = seatOfClient(socket.data.clientId);
+    const g = room.game;
+    if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
+    makeRedouble(g, seat); // no-ops if illegal
     maybeFinishRound();
     afterMove(false);
   });

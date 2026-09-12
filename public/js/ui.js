@@ -1,7 +1,7 @@
 // ui.js - everything that touches the DOM. Rendering stays separate from rules.
 
 import { SUIT_SYMBOLS, RANK_LABELS } from './cards.js';
-import { SEATS, isLegal, isLegalBid, controllerOf, PARTNERSHIPS } from './game.js';
+import { SEATS, isLegal, isLegalBid, isLegalDouble, isLegalRedouble, controllerOf, PARTNERSHIPS } from './game.js';
 import { subtotalsFor } from './scoring.js';
 
 const RED_SUITS = new Set(['H', 'D']);
@@ -18,7 +18,7 @@ function paintFace(el, card) {
   el.setAttribute('aria-label', cardName(card)); // spoken name for screen readers
   const idx = document.createElement('span');
   idx.className = 'idx';
-  idx.innerHTML = rankText(card) + '<br>' + suitSymbol(card);
+  idx.innerHTML = `<span class="r">${rankText(card)}</span><span class="s">${suitSymbol(card)}</span>`;
   const pip = document.createElement('span');
   pip.className = 'pip';
   pip.textContent = suitSymbol(card);
@@ -106,20 +106,21 @@ function renderCalls(game) {
   for (const seat of SEATS) {
     const el = document.getElementById('call-' + seat);
     if (!el) continue;
-    const call = auctionOn ? lastCall(game, seat) : null;
-    if (!call) { el.textContent = ''; el.style.visibility = 'hidden'; el.className = 'call'; continue; }
-    el.style.visibility = 'visible';
-    if (call.pass) { el.textContent = 'Pass'; el.className = 'call pass'; }
-    else {
-      el.textContent = `${call.level}${call.strain === 'NT' ? 'NT' : SUIT_SYMBOLS[call.strain]}`;
-      el.className = 'call ' + (call.strain !== 'NT' && RED_SUITS.has(call.strain) ? 'red' : 'white');
-    }
+    if (!auctionOn) { el.innerHTML = ''; el.className = 'call'; continue; }
+    const mine = game.bids.filter((b) => b.seat === seat); // every call this seat made, in order
+    el.className = 'call';
+    el.innerHTML = mine.map(callPill).join('');
   }
 }
 
-function lastCall(game, seat) {
-  for (let i = game.bids.length - 1; i >= 0; i--) if (game.bids[i].seat === seat) return game.bids[i];
-  return null;
+// One small pill for a single call.
+function callPill(b) {
+  if (b.pass) return '<span class="call-item pass">Pass</span>';
+  if (b.double) return '<span class="call-item dbl">X</span>';
+  if (b.redouble) return '<span class="call-item dbl">XX</span>';
+  const sym = b.strain === 'NT' ? 'NT' : SUIT_SYMBOLS[b.strain];
+  const color = (b.strain !== 'NT' && RED_SUITS.has(b.strain)) ? 'red' : 'white';
+  return `<span class="call-item ${color}">${b.level}${sym}</span>`;
 }
 
 // Footer quick total, plus the popup panel with the rubber standing and per-deal history table.
@@ -227,16 +228,20 @@ function renderBidding(game, selectedLevel) {
   document.getElementById('level').textContent = selectedLevel;
   const myTurn = game.turn === MY_SEAT;
   document.getElementById('pass').disabled = !myTurn;
+  document.getElementById('dbl').disabled = !(myTurn && isLegalDouble(game, MY_SEAT));
+  document.getElementById('redbl').disabled = !(myTurn && isLegalRedouble(game, MY_SEAT));
   document.querySelectorAll('.bid').forEach((btn) => {
     btn.disabled = !(myTurn && isLegalBid(game, selectedLevel, btn.dataset.strain));
   });
 }
 
+function dblTag(c) { return c && c.doubled === 2 ? ' XX' : (c && c.doubled === 1 ? ' X' : ''); }
+
 function renderAuction(game) {
   const el = document.getElementById('auction');
-  const parts = game.bids.map((b) => (b.pass ? `${b.seat}: Pass` : `${b.seat}: ${b.level}${b.strain}`));
+  const parts = game.bids.map((b) => `${b.seat}: ${b.pass ? 'Pass' : b.double ? 'X' : b.redouble ? 'XX' : b.level + b.strain}`);
   let line = parts.join('   ');
-  if (game.contract) line += `   |   Contract ${game.contract.level}${game.contract.strain} by ${game.contract.declarer}`;
+  if (game.contract) line += `   |   Contract ${game.contract.level}${game.contract.strain}${dblTag(game.contract)} by ${game.contract.declarer}`;
   el.textContent = line;
 }
 
@@ -262,12 +267,12 @@ function renderStatus(game) {
     el.textContent = `Deal ${game.round} passed out, nobody bid. Press New Deal.`;
   } else if (game.phase === 'playing') {
     const c = game.contract;
-    el.textContent = `Contract ${c.level}${c.strain} by ${c.declarer} | Vul ${vul} | Turn: ${SEAT_NAMES[game.turn]} | NS ${game.tricksWon.NS} - EW ${game.tricksWon.EW}`;
+    el.textContent = `Contract ${c.level}${c.strain}${dblTag(c)} by ${c.declarer} | Vul ${vul} | Turn: ${SEAT_NAMES[game.turn]} | NS ${game.tricksWon.NS} - EW ${game.tricksWon.EW}`;
   } else { // done
     const c = game.contract;
     const side = PARTNERSHIPS[c.declarer];
     const diff = game.tricksWon[side] - (c.level + 6); // tricks over or under the contract
     const result = diff >= 0 ? `made${diff > 0 ? ` +${diff}` : ''}` : `down ${-diff}`;
-    el.textContent = `Deal ${game.round} done. ${c.level}${c.strain} by ${c.declarer}: ${result}. Tricks NS ${game.tricksWon.NS} - EW ${game.tricksWon.EW}.`;
+    el.textContent = `Deal ${game.round} done. ${c.level}${c.strain}${dblTag(c)} by ${c.declarer}: ${result}. Tricks NS ${game.tricksWon.NS} - EW ${game.tricksWon.EW}.`;
   }
 }

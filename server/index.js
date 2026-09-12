@@ -27,7 +27,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 30;  // a connected human has this long to act before the server auto-acts
+const TURN_SECONDS = 120;  // a connected human has this long to act before the server auto-acts
 const GRACE_SECONDS = 25; // a disconnected human keeps their seat this long before it reverts to a bot
 
 // Connected sockets. Keyed per-socket (not per clientId) so no connection is ever dropped from

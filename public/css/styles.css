@@ -89,14 +89,14 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   min-height: 0;
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto 1fr;
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
     ".    top    ."
     "left trick right"
     ".    bottom .";
   gap: 0.25rem;
-  padding: 0.5rem;
+  padding: 0.5rem 2.5rem;
   overflow: hidden; /* never let a tall side hand push the layout around */
   /* Felt darker than the cards so the opaque surface-toned cards clearly stand out. */
   background: radial-gradient(130% 100% at 50% 50%, #0f1012 0%, #070809 75%);

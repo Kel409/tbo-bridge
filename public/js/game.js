@@ -174,9 +174,72 @@ function resolveTrick(game) {
 }
 
 // A trivial legal move for auto-played seats. Replace with real strategy later.
+// Is this card a trump in the current contract?
+function isTrump(game, card) {
+  return game.trump !== 'NT' && card.suit === game.trump;
+}
+
+// The play currently winning the in-progress trick (same rule as resolveTrick), or null if empty.
+function currentWinner(game) {
+  if (game.currentTrick.length === 0) return null;
+  const led = game.currentTrick[0].card.suit;
+  let best = game.currentTrick[0];
+  for (const play of game.currentTrick) {
+    const c = play.card, b = best.card;
+    const cT = isTrump(game, c), bT = isTrump(game, b);
+    if (cT && !bT) { best = play; continue; }
+    if (!cT && bT) continue;
+    const winSuit = bT ? game.trump : led;
+    if (c.suit === winSuit && c.rank > b.rank) best = play;
+  }
+  return best;
+}
+
+const lowestOf = (cards) => cards.reduce((lo, c) => (c.rank < lo.rank ? c : lo), cards[0]);
+
+// A competent (not expert) card for an auto-played seat: win cheaply when it helps, save high cards
+// when partner is winning, ruff opponents when void, and lead sensibly. Uses only this seat's own hand
+// plus the public trick - no peeking at hidden hands.
 export function pickAutoCard(game, seat) {
-  const legal = game.hands[seat].filter((c) => isLegal(game, seat, c));
-  return legal.reduce((lo, c) => (c.rank < lo.rank ? c : lo), legal[0]); // lowest legal card
+  const hand = game.hands[seat];
+  const legal = hand.filter((c) => isLegal(game, seat, c));
+  if (legal.length <= 1) return legal[0] || hand[0];
+
+  // On lead: cash an ace if we have one, otherwise develop by leading low from our longest suit.
+  if (game.currentTrick.length === 0) {
+    const aces = legal.filter((c) => c.rank === 14);
+    if (aces.length) return aces[0];
+    const bySuit = {};
+    for (const c of hand) (bySuit[c.suit] = bySuit[c.suit] || []).push(c);
+    let longest = null;
+    for (const s in bySuit) if (!longest || bySuit[s].length > bySuit[longest].length) longest = s;
+    const inLongest = legal.filter((c) => c.suit === longest);
+    return lowestOf(inLongest.length ? inLongest : legal);
+  }
+
+  const led = game.currentTrick[0].card.suit;
+  const winner = currentWinner(game);
+  const partnerWinning = PARTNERSHIPS[winner.seat] === PARTNERSHIPS[seat];
+  const followers = legal.filter((c) => c.suit === led);
+
+  if (followers.length) {
+    if (partnerWinning) return lowestOf(followers);          // partner has the trick; keep our high cards
+    if (!isTrump(game, winner.card)) {                        // opponent winning with a plain card
+      const beats = followers.filter((c) => c.rank > winner.card.rank);
+      if (beats.length) return lowestOf(beats);               // win as cheaply as possible
+    }
+    return lowestOf(followers);                               // can't beat it; throw the lowest
+  }
+
+  // Void in the led suit: ruff to win if an opponent is ahead, otherwise discard low.
+  const trumps = legal.filter((c) => isTrump(game, c));
+  if (!partnerWinning && trumps.length) {
+    if (!isTrump(game, winner.card)) return lowestOf(trumps); // ruff cheaply
+    const over = trumps.filter((c) => c.rank > winner.card.rank);
+    if (over.length) return lowestOf(over);                   // over-ruff cheaply
+  }
+  const nonTrump = legal.filter((c) => !isTrump(game, c));
+  return lowestOf(nonTrump.length ? nonTrump : legal);        // discard low, keeping trumps
 }
 
 // function to allow declarer to control dummy hand

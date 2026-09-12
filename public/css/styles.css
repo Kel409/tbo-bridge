@@ -13,7 +13,8 @@
   --suit-red: var(--color-accent-text); /* hearts, diamonds */
   --suit-white: var(--color-text);      /* spades, clubs */
 
-  --card-w: clamp(32px, 4.2vw, 54px);
+  --card-scale: 1; /* user card-size preference, set from the Size control */
+  --card-w: calc(clamp(32px, 4.2vw, 54px) * var(--card-scale));
   --card-h: calc(var(--card-w) * 1.4);
   --radius: calc(var(--card-w) * 0.12);
 }
@@ -151,15 +152,15 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   position: absolute;
   top: 4%;
   left: 8%;
-  font-size: calc(var(--card-w) * 0.30);
-  font-weight: 700;
+  font-size: calc(var(--card-w) * 0.34);
+  font-weight: 800;
   line-height: 0.95;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 /* On the vertical side hands only the top sliver shows, so put rank and suit on ONE line. */
-.pos-left .card .idx, .pos-right .card .idx { flex-direction: row; gap: 1px; align-items: baseline; }
+.pos-left .card .idx, .pos-right .card .idx { flex-direction: row; gap: 1px; align-items: baseline; font-size: calc(var(--card-w) * 0.38); }
 .card .pip {
   position: absolute;
   inset: 0;
@@ -310,3 +311,7 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 }
 .seatbtn:hover { border-color: var(--color-accent); }
 #reset-all { border-color: var(--color-accent); }
+
+/* Card-size preference control (client-side, per user). */
+#size-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--color-muted); }
+#card-size { width: 90px; accent-color: var(--color-accent); }

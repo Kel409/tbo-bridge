@@ -83,6 +83,16 @@ document.getElementById('reset-all').addEventListener('click', () => {
 });
 document.getElementById('leave-seat').addEventListener('click', () => socket.emit('release'));
 
+// Card-size preference (client-side, persisted per browser). Scales the whole board via --card-scale.
+const sizeInput = document.getElementById('card-size');
+const savedScale = localStorage.getItem('cardScale') || '1';
+document.documentElement.style.setProperty('--card-scale', savedScale);
+sizeInput.value = savedScale;
+sizeInput.addEventListener('input', () => {
+  document.documentElement.style.setProperty('--card-scale', sizeInput.value);
+  localStorage.setItem('cardScale', sizeInput.value);
+});
+
 // ---- Local view controls (no server involvement) ----
 document.getElementById('level-up').addEventListener('click', () => { selectedLevel = Math.min(7, selectedLevel + 1); draw(); });
 document.getElementById('level-down').addEventListener('click', () => { selectedLevel = Math.max(1, selectedLevel - 1); draw(); });

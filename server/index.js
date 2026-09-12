@@ -21,6 +21,7 @@ import { chooseBid } from '../public/js/bidding-ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.get('/healthz', (req, res) => res.send('ok')); // liveness check for the host / monitoring
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const httpServer = createServer(app);
 const io = new Server(httpServer);

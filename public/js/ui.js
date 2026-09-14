@@ -31,6 +31,11 @@ const SEAT_NAMES = { N: 'North', E: 'East', S: 'South', W: 'West' };
 let MY_SEAT = null;      // which seat is "me" (null = spectator)
 let SEAT_STATUS = null;  // { N:'empty'|'bot'|'you'|'taken', ... }
 let POS = {};            // logical seat -> screen position ('top'|'bottom'|'left'|'right'), set each render
+let SPECTATING = false;  // viewer chose to spectate (drives the button; not used for rendering)
+let REVEAL_ALL = false;  // all hands visible right now (spectating, or the deal is over)
+let LOCKED = false;      // viewer cannot claim a seat this deal
+let SUIT_ORDER = ['S', 'H', 'D', 'C']; // viewer's preferred suit order for their own hand
+let BIDS_OPEN = false;   // bid-order popup shown
 
 const CW = ['N', 'E', 'S', 'W']; // clockwise
 function nextCW(s) { return CW[(CW.indexOf(s) + 1) % 4]; }
@@ -50,6 +55,11 @@ function positionsFor(mySeat) {
 export function render(game, onHumanPlay, view) {
   MY_SEAT = view.mySeat ?? null;
   SEAT_STATUS = view.seats ?? null;
+  SPECTATING = !!view.spectating;
+  REVEAL_ALL = !!view.revealAll;
+  LOCKED = !!view.locked;
+  SUIT_ORDER = view.suitOrder || ['S', 'H', 'D', 'C'];
+  BIDS_OPEN = !!view.bidsOpen;
   POS = positionsFor(MY_SEAT);
   for (const seat of SEATS) {
     const section = document.getElementById('seat-' + seat);
@@ -66,6 +76,7 @@ export function render(game, onHumanPlay, view) {
   renderBidding(game, view.selectedLevel);
   renderAuction(game);
   renderScoreboard(view);
+  renderBids(game);
 }
 
 // Light pool on whoever is to act (at their screen position), during bidding and play.
@@ -83,10 +94,13 @@ function renderSeatControls() {
     if (!el) continue;
     const st = SEAT_STATUS ? SEAT_STATUS[seat] : 'empty';
     const btn = (action, label) => `<button class="seatbtn" data-action="${action}" data-seat="${seat}">${label}</button>`;
+    const sit = LOCKED
+      ? '<button class="seatbtn" disabled title="You are locked out this deal (you saw the cards)">Sit</button>'
+      : btn('claim', 'Sit');
     if (st === 'you') el.innerHTML = btn('release', 'Leave');
     else if (st === 'taken') el.innerHTML = '';
-    else if (st === 'bot') el.innerHTML = btn('claim', 'Sit') + btn('removeBot', '\u2212 Bot');
-    else el.innerHTML = btn('claim', 'Sit') + btn('addBot', '+ Bot'); // empty
+    else if (st === 'bot') el.innerHTML = sit + btn('removeBot', '\u2212 Bot');
+    else el.innerHTML = sit + btn('addBot', '+ Bot'); // empty
   }
 }
 
@@ -187,19 +201,28 @@ function renderSeatLabels(game) {
 
 function renderHand(game, seat, onHumanPlay) {
   const el = document.getElementById('hand-' + seat);
-  const faceUp = seat === MY_SEAT || (game.dummyRevealed && seat === game.dummy);
+  const faceUp = REVEAL_ALL || seat === MY_SEAT || (game.dummyRevealed && seat === game.dummy);
   el.className = 'hand ' + (faceUp ? 'spread' : 'stacked'); // spread = readable cascade, stacked = compact pile
   el.innerHTML = '';
-  for (const card of game.hands[seat]) {
+  let cards = game.hands[seat];
+  if (seat === MY_SEAT) cards = sortForDisplay(cards); // the viewer's preferred suit order applies to their own hand
+  for (const card of cards) {
     const btn = document.createElement('button');
     btn.className = 'card';
-    if (faceUp) paintFace(btn, card);
-    else { btn.classList.add('back'); btn.setAttribute('aria-label', 'face-down card'); } // opponents stay face down
+    if (faceUp && !card.hidden) paintFace(btn, card);
+    else { btn.classList.add('back'); btn.setAttribute('aria-label', 'face-down card'); } // hidden hands stay face down
     const playable = game.phase === 'playing' && controllerOf(game, seat) === MY_SEAT && isLegal(game, seat, card);
     btn.disabled = !playable;
     if (playable) btn.addEventListener('click', () => onHumanPlay(card));
     el.appendChild(btn);
   }
+}
+
+// Order the viewer's own cards by their chosen suit order, then by rank high-to-low within a suit.
+function sortForDisplay(cards) {
+  const rank = {};
+  SUIT_ORDER.forEach((s, i) => { rank[s] = i; });
+  return cards.slice().sort((a, b) => (rank[a.suit] - rank[b.suit]) || (b.rank - a.rank));
 }
 
 function renderTrick(game) {
@@ -275,4 +298,37 @@ function renderStatus(game) {
     const result = diff >= 0 ? `made${diff > 0 ? ` +${diff}` : ''}` : `down ${-diff}`;
     el.textContent = `Deal ${game.round} done. ${c.level}${c.strain}${dblTag(c)} by ${c.declarer}: ${result}. Tricks NS ${game.tricksWon.NS} - EW ${game.tricksWon.EW}.`;
   }
+}
+// ---- Bid-order popup: the current deal's auction as a grid, dealer first, clockwise. ----
+function renderBids(game) {
+  const overlay = document.getElementById('bids-overlay');
+  if (overlay) overlay.hidden = !BIDS_OPEN;
+  const content = document.getElementById('bids-content');
+  if (content) content.innerHTML = buildBidsHTML(game);
+}
+
+function bidCellHTML(b) {
+  if (!b) return '<span class="bid-empty">&middot;</span>';
+  if (b.pass) return '<span>Pass</span>';
+  if (b.double) return '<span class="bid-x">X</span>';
+  if (b.redouble) return '<span class="bid-x">XX</span>';
+  const sym = b.strain === 'NT' ? 'NT' : SUIT_SYMBOLS[b.strain];
+  const cls = (b.strain !== 'NT' && RED_SUITS.has(b.strain)) ? 'bid-red' : 'bid-white';
+  return `<span class="${cls}">${b.level}${sym}</span>`;
+}
+
+function buildBidsHTML(game) {
+  const bids = game.bids || [];
+  if (!bids.length) return '<p class="sb-empty">No bids yet this deal.</p>';
+  // Column order: dealer first, then clockwise. Bids were made in exactly that order.
+  const order = [];
+  let s = game.dealer || 'S';
+  for (let i = 0; i < 4; i++) { order.push(s); s = CW[(CW.indexOf(s) + 1) % 4]; }
+  const head = order.map((seat) => `<th>${SEAT_NAMES[seat]}${seat === game.dealer ? ' (dealer)' : ''}</th>`).join('');
+  let body = '';
+  for (let i = 0; i < bids.length; i += 4) {
+    const rowCells = order.map((_, c) => `<td>${bidCellHTML(bids[i + c])}</td>`).join('');
+    body += `<tr>${rowCells}</tr>`;
+  }
+  return `<table class="bid-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }

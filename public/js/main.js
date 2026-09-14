@@ -15,8 +15,10 @@ if (!clientId) {
 
 let state = null;           // latest snapshot: { game, rubber, rounds, log, seats, you }
 let selectedLevel = 1;      // local: bid level stepper
-let scoreboardOpen = false; // local: is the popup showing
+let scoreboardOpen = false; // local: is the scoreboard popup showing
+let bidsOpen = false;       // local: is the bid-order popup showing
 let seenRounds = 0;         // to auto-open the scoreboard when a deal finishes
+let suitOrder = (localStorage.getItem('suitOrder') || 'SHDC').split(''); // viewer's preferred suit order
 
 function draw() {
   if (!state) return;
@@ -28,6 +30,11 @@ function draw() {
     rubber: state.rubber,
     mySeat: state.you,
     seats: state.seats,
+    spectating: state.spectating,
+    revealAll: state.revealAll,
+    locked: state.locked,
+    suitOrder,
+    bidsOpen,
   });
 }
 
@@ -39,6 +46,11 @@ socket.on('state', (s) => {
   if (s.rounds.length < seenRounds) seenRounds = s.rounds.length; // new rubber reset
   const leaveBtn = document.getElementById('leave-seat');
   if (leaveBtn) leaveBtn.disabled = !s.you; // only usable when you actually hold a seat
+  const spectateBtn = document.getElementById('spectate');
+  if (spectateBtn) {
+    spectateBtn.textContent = s.spectating ? 'Stop spectating' : 'Spectate';
+    spectateBtn.classList.toggle('on', !!s.spectating);
+  }
   draw();
   updateClock();
 });
@@ -82,6 +94,42 @@ document.getElementById('reset-all').addEventListener('click', () => {
   if (confirm('Reset scores and start a new game? (keeps everyone in their seats)')) socket.emit('resetAll');
 });
 document.getElementById('leave-seat').addEventListener('click', () => socket.emit('release'));
+document.getElementById('spectate').addEventListener('click', () => socket.emit('spectate', !(state && state.spectating)));
+document.getElementById('bids-toggle').addEventListener('click', () => { bidsOpen = !bidsOpen; draw(); });
+document.getElementById('bids-close').addEventListener('click', () => { bidsOpen = false; draw(); });
+
+// ---- Drag-to-reorder suit chips (client-side hand ordering preference) ----
+const SUIT_LABEL = { S: '\u2660', H: '\u2665', D: '\u2666', C: '\u2663' };
+const RED = new Set(['H', 'D']);
+const suitOrderEl = document.getElementById('suit-order');
+let dragSuit = null;
+
+function buildSuitChips() {
+  suitOrderEl.innerHTML = '';
+  for (const suit of suitOrder) {
+    const chip = document.createElement('span');
+    chip.className = 'suit-chip ' + (RED.has(suit) ? 'red' : 'white');
+    chip.textContent = SUIT_LABEL[suit];
+    chip.draggable = true;
+    chip.dataset.suit = suit;
+    chip.addEventListener('dragstart', () => { dragSuit = suit; chip.classList.add('dragging'); });
+    chip.addEventListener('dragend', () => { dragSuit = null; chip.classList.remove('dragging'); });
+    chip.addEventListener('dragover', (e) => e.preventDefault());
+    chip.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const target = chip.dataset.suit;
+      if (!dragSuit || dragSuit === target) return;
+      const next = suitOrder.filter((x) => x !== dragSuit);
+      next.splice(next.indexOf(target), 0, dragSuit); // drop before the target
+      suitOrder = next;
+      localStorage.setItem('suitOrder', suitOrder.join(''));
+      buildSuitChips();
+      draw(); // re-sort the hand immediately
+    });
+    suitOrderEl.appendChild(chip);
+  }
+}
+buildSuitChips();
 
 // Card-size preference (client-side, persisted per browser). Scales the whole board via --card-scale.
 const sizeInput = document.getElementById('card-size');

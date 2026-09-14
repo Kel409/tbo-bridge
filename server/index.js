@@ -51,6 +51,8 @@ const room = {
   clock: null,        // human turn-clock timer
   turnEndsAt: null,   // epoch ms the current human turn auto-resolves (null on bot/auto turns)
   grace: new Map(),   // clientId -> grace timer for a disconnected human still holding a seat
+  reveal: new Set(),  // clientIds spectating with all cards revealed
+  lockedThisDeal: new Set(), // clientIds barred from claiming a seat this deal (they saw the cards)
 };
 
 function seatOfClient(cid) { return cid == null ? null : (SEATS.find((s) => room.seats[s] === cid) || null); }
@@ -68,11 +70,13 @@ function seatIsAuto(seat) {
 function clearClock() { clearTimeout(room.clock); room.clock = null; room.turnEndsAt = null; }
 
 // ---- Per-player view: hide every hand except the viewer's own and the exposed dummy. ----
-function viewFor(seat) {
+function viewFor(seat, cid) {
   const g = room.game;
+  const chosenSpectate = room.reveal.has(cid);
+  const revealAll = chosenSpectate || g.phase === 'done'; // spectators, and everyone once the deal is over
   const hands = {};
   for (const s of SEATS) {
-    const canSee = s === seat || (g.dummyRevealed && s === g.dummy);
+    const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy);
     hands[s] = canSee ? g.hands[s] : g.hands[s].map(() => ({ hidden: true })); // placeholders keep the count only
   }
   const seatStatus = {};
@@ -87,12 +91,14 @@ function viewFor(seat) {
     log: room.log,
     seats: seatStatus,
     you: seat,
-    turnEndsAt: room.turnEndsAt, // epoch ms the current human turn auto-resolves, or null
+    turnEndsAt: room.turnEndsAt,           // epoch ms the current human turn auto-resolves, or null
+    spectating: chosenSpectate,            // this client chose to spectate (drives the button)
+    revealAll,                             // all hands are visible now (spectating, or the deal is over)
+    locked: room.lockedThisDeal.has(cid),  // this client cannot claim a seat until the next deal
   };
 }
-
 function emitStates() {
-  for (const s of sockets) s.emit('state', viewFor(seatOfClient(s.data.clientId)));
+  for (const s of sockets) s.emit('state', viewFor(seatOfClient(s.data.clientId), s.data.clientId));
 }
 
 // ---- Scoring (ported from the offline main.js) ----
@@ -221,6 +227,7 @@ function newDeal(round) {
   const g = newGame(round);
   g.vul = vulnerability(room.rubber);
   room.dealGameWon = null;
+  room.lockedThisDeal = new Set(room.reveal); // anyone still spectating has seen the new deal
   return g;
 }
 
@@ -253,19 +260,34 @@ io.on('connection', (socket) => {
       room.grace.delete(clientId);
       reevaluate(); // seat is a connected human again -> switch bot-driving back to the clock
     } else {
-      socket.emit('state', viewFor(seatOfClient(clientId))); // just sync this newcomer (don't disturb the clock)
+      socket.emit('state', viewFor(seatOfClient(clientId), clientId)); // just sync this newcomer (don't disturb the clock)
     }
   });
 
   socket.on('claim', (seat) => {
     const cid = socket.data.clientId;
     if (!cid || !SEATS.includes(seat)) return;
+    if (room.lockedThisDeal.has(cid)) return; // saw the cards this deal -> cannot sit until next deal
     const holder = room.seats[seat];
     const holderIsHuman = holder != null && holder !== 'bot';
     // Blocked only if another human holds it and is connected or briefly away (in grace). Bots/empty are free.
     if (holderIsHuman && holder !== cid && (clientConnected(holder) || room.grace.has(holder))) return;
     for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null; // one seat per client
     room.seats[seat] = cid;
+    reevaluate();
+  });
+
+  // Spectate = reveal all cards. Gives up any seat and locks this client out of the current deal.
+  socket.on('spectate', (on) => {
+    const cid = socket.data.clientId;
+    if (!cid) return;
+    if (on) {
+      for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null; // leave the table
+      room.reveal.add(cid);
+      room.lockedThisDeal.add(cid); // they have now seen every hand this deal
+    } else {
+      room.reveal.delete(cid); // stop peeking (still locked out for the rest of this deal)
+    }
     reevaluate();
   });
 
@@ -368,6 +390,8 @@ io.on('connection', (socket) => {
       }, GRACE_SECONDS * 1000);
       room.grace.set(cid, handle);
     }
+    room.reveal.delete(cid);
+    room.lockedThisDeal.delete(cid);
     reevaluate(); // the seat is now auto; the bot driver takes over its turns
   });
 });

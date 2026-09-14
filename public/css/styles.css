@@ -315,3 +315,40 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 /* Card-size preference control (client-side, per user). */
 #size-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--color-muted); }
 #card-size { width: 90px; accent-color: var(--color-accent); }
+
+/* ---- Bid-order popup (same look as the scoreboard) ---- */
+#bids-toggle {
+  position: fixed; right: 0; top: calc(50% + 90px); transform: translateY(-50%);
+  writing-mode: vertical-rl; padding: 0.7rem 0.4rem;
+  border-radius: 6px 0 0 6px; border-color: var(--color-accent); letter-spacing: 0.06em; z-index: 50;
+}
+#bids-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6);
+}
+#bids-overlay[hidden] { display: none; }
+#bids-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.2rem 1.4rem; min-width: 320px; max-width: 92vw; max-height: 85vh; overflow: auto;
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+}
+#bids-panel h2 { margin: 0 0 0.8rem; font-family: Georgia, "Times New Roman", serif; font-weight: 600; color: var(--color-accent-text); }
+#bids-close { margin-top: 1.1rem; border-color: var(--color-accent); }
+.bid-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.bid-table th, .bid-table td { padding: 0.3rem 0.9rem; text-align: center; border-bottom: 1px solid var(--color-border); }
+.bid-table thead th { color: var(--color-muted); font-weight: 600; }
+.bid-red { color: var(--suit-red); }
+.bid-white { color: var(--suit-white); }
+.bid-x { color: var(--color-accent-text); font-weight: 700; }
+.bid-empty { color: #555; }
+
+/* ---- Draggable suit-order chips ---- */
+#suit-order { display: inline-flex; gap: 3px; }
+.suit-chip {
+  cursor: grab; user-select: none; padding: 0.1rem 0.4rem; border-radius: 5px;
+  background: var(--color-surface); border: 1px solid var(--color-border); font-size: 0.95rem;
+}
+.suit-chip.dragging { opacity: 0.4; }
+.suit-chip.red { color: var(--suit-red); }
+.suit-chip.white { color: var(--suit-white); }
+#spectate.on { border-color: var(--color-accent); color: var(--color-accent-text); }

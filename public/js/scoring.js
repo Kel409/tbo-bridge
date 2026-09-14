@@ -7,7 +7,26 @@
 // - Per-deal game/part-score bonuses do NOT exist in rubber. Game and rubber bonuses are handled by rubber.js.
 // - All point values are POSITIVE. The team is what changes, never the sign.
 // - Vulnerability changes only the undertrick penalty here. It does not change undoubled overtrick value.
-// - NOT handled yet (all undoubled): doubling/redoubling, slam bonuses, and honors.
+// - NOT handled yet (all undoubled): slam bonuses.
+//
+// Honors (rubber bridge, evaluated from the original 13-card hands): a suit contract pays 100 to the side of
+// a player holding 4 of the 5 trump honors (A K Q J 10), or 150 for all 5; notrump pays 150 for all four aces.
+// Honors are awarded regardless of who declared or whether the contract made.
+export function honorBonus(hands, strain) {
+  const seats = ['N', 'E', 'S', 'W'];
+  if (strain === 'NT') {
+    for (const seat of seats) {
+      if (hands[seat].filter((c) => c.rank === 14).length === 4) return { seat, points: 150 };
+    }
+    return null;
+  }
+  for (const seat of seats) {
+    const honors = hands[seat].filter((c) => c.suit === strain && c.rank >= 10).length; // 10 J Q K A
+    if (honors === 5) return { seat, points: 150 };
+    if (honors === 4) return { seat, points: 100 };
+  }
+  return null;
+}
 
 // ---- Rule constants (edit these in one place rather than sprinkling numbers through the code) ----
 const MINOR_PER_TRICK = 20; // clubs, diamonds

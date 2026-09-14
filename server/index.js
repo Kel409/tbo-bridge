@@ -15,7 +15,7 @@ import {
   newGame, makeBid, makePass, makeDouble, makeRedouble, playCard, pickAutoCard,
   isLegal, isLegalBid, controllerOf, PARTNERSHIPS, SEATS,
 } from '../public/js/game.js';
-import { createLog, scoreHand, addEvents, extraBonusRow } from '../public/js/scoring.js';
+import { createLog, scoreHand, addEvents, extraBonusRow, honorBonus } from '../public/js/scoring.js';
 import { newRubber, vulnerability, applyTrickPoints } from '../public/js/rubber.js';
 import { chooseBid } from '../public/js/bidding-ai.js';
 
@@ -27,7 +27,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 120;  // a connected human has this long to act before the server auto-acts
+const TURN_SECONDS = 30;  // a connected human has this long to act before the server auto-acts
 const GRACE_SECONDS = 25; // a disconnected human keeps their seat this long before it reverts to a bot
 
 // Connected sockets. Keyed per-socket (not per clientId) so no connection is ever dropped from
@@ -53,6 +53,7 @@ const room = {
   grace: new Map(),   // clientId -> grace timer for a disconnected human still holding a seat
   reveal: new Set(),  // clientIds spectating with all cards revealed
   lockedThisDeal: new Set(), // clientIds barred from claiming a seat this deal (they saw the cards)
+  originalHands: null, // snapshot of the current deal for honors scoring (server-only)
 };
 
 function seatOfClient(cid) { return cid == null ? null : (SEATS.find((s) => room.seats[s] === cid) || null); }
@@ -74,10 +75,12 @@ function viewFor(seat, cid) {
   const g = room.game;
   const chosenSpectate = room.reveal.has(cid);
   const revealAll = chosenSpectate || g.phase === 'done'; // spectators, and everyone once the deal is over
+  // At the end of a deal the played-out hands are empty, so show the original deal instead.
+  const source = (g.phase === 'done' && room.originalHands) ? room.originalHands : g.hands;
   const hands = {};
   for (const s of SEATS) {
     const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy);
-    hands[s] = canSee ? g.hands[s] : g.hands[s].map(() => ({ hidden: true })); // placeholders keep the count only
+    hands[s] = canSee ? source[s] : source[s].map(() => ({ hidden: true })); // placeholders keep the count only
   }
   const seatStatus = {};
   for (const s of SEATS) {
@@ -121,6 +124,10 @@ function scoreDeal() {
   const outcome = applyTrickPoints(room.rubber, declSide, trickPoints);
   room.dealGameWon = outcome.gameWon;
   if (outcome.rubberBonus > 0) addEvents(room.log, [extraBonusRow(g.round, outcome.bonusSide, 'Rubber bonus', outcome.rubberBonus)]);
+
+  // Honors: from the original deal, awarded to whichever side held them (independent of the result).
+  const honors = honorBonus(room.originalHands, g.contract.strain);
+  if (honors) addEvents(room.log, [extraBonusRow(g.round, PARTNERSHIPS[honors.seat], 'Honors', honors.points)]);
 }
 
 function maybeFinishRound() {
@@ -228,6 +235,7 @@ function newDeal(round) {
   g.vul = vulnerability(room.rubber);
   room.dealGameWon = null;
   room.lockedThisDeal = new Set(room.reveal); // anyone still spectating has seen the new deal
+  room.originalHands = structuredClone(g.hands); // kept on the room (not the game) so it never reaches clients
   return g;
 }
 

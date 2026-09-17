@@ -30,6 +30,7 @@ function draw() {
     rubber: state.rubber,
     mySeat: state.you,
     seats: state.seats,
+    seatNames: state.seatNames,
     spectating: state.spectating,
     revealAll: state.revealAll,
     locked: state.locked,
@@ -51,6 +52,7 @@ socket.on('state', (s) => {
     spectateBtn.textContent = s.spectating ? 'Stop spectating' : 'Spectate';
     spectateBtn.classList.toggle('on', !!s.spectating);
   }
+  renderAuthBar();
   draw();
   updateClock();
 });
@@ -85,7 +87,10 @@ document.getElementById('table').addEventListener('click', (e) => {
   if (!b) return;
   const { action, seat } = b.dataset;
   if (action === 'release') socket.emit('release');
-  else if (action === 'claim') socket.emit('claim', seat);
+  else if (action === 'claim') {
+    if (!(state && state.loggedIn)) { openAuth(); return; } // must sign in to sit
+    socket.emit('claim', seat);
+  }
   else if (action === 'addBot') socket.emit('addBot', seat);
   else if (action === 'removeBot') socket.emit('removeBot', seat);
 });
@@ -146,3 +151,49 @@ document.getElementById('level-up').addEventListener('click', () => { selectedLe
 document.getElementById('level-down').addEventListener('click', () => { selectedLevel = Math.max(1, selectedLevel - 1); draw(); });
 document.getElementById('sb-toggle').addEventListener('click', () => { scoreboardOpen = !scoreboardOpen; draw(); });
 document.getElementById('sb-next').addEventListener('click', () => { scoreboardOpen = false; draw(); });
+
+// ---- Accounts: auth bar, login/signup overlay ----
+function openAuth() { const o = document.getElementById('auth-overlay'); if (o) o.hidden = false; }
+function closeAuth() { const o = document.getElementById('auth-overlay'); if (o) o.hidden = true; }
+
+function renderAuthBar() {
+  const el = document.getElementById('auth-bar');
+  if (!el || !state) return;
+  el.innerHTML = state.loggedIn
+    ? `${state.username} <button id="auth-logout">Logout</button>`
+    : '<button id="auth-open">Log in</button>';
+}
+
+async function submitAuth(kind) {
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  try {
+    const res = await fetch('/api/' + kind, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { errEl.textContent = data.error || 'Something went wrong.'; return; }
+    location.reload(); // reconnect the socket so its handshake carries the new session
+  } catch {
+    errEl.textContent = 'Network error.';
+  }
+}
+
+async function logout() {
+  try { await fetch('/api/logout', { method: 'POST' }); } catch { /* ignore */ }
+  location.reload();
+}
+
+// Delegated clicks for the auth bar (its buttons are re-rendered each state).
+document.getElementById('auth-bar').addEventListener('click', (e) => {
+  if (e.target.id === 'auth-open') openAuth();
+  else if (e.target.id === 'auth-logout') logout();
+});
+document.getElementById('auth-login').addEventListener('click', () => submitAuth('login'));
+document.getElementById('auth-signup').addEventListener('click', () => submitAuth('signup'));
+document.getElementById('auth-close').addEventListener('click', closeAuth);
+document.getElementById('auth-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAuth('login'); });

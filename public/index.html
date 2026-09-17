@@ -9,6 +9,7 @@
 <body>
   <header id="topbar">
     <h1>Bridge</h1>
+    <span id="auth-bar"></span>
     <p id="status"></p>
     <span id="clock"></span>
     <div id="auction"></div>
@@ -69,6 +70,21 @@
       <h2>Scoreboard</h2>
       <div id="sb-content"></div>
       <button id="sb-next">Next</button>
+    </div>
+  </div>
+
+  <div id="auth-overlay" hidden>
+    <div id="auth-panel" role="dialog" aria-modal="true" aria-label="Sign in">
+      <h2>Sign in to play</h2>
+      <p class="auth-hint">You can watch without an account, but you need one to sit at the table.</p>
+      <input id="auth-username" type="text" placeholder="Username" autocomplete="username" maxlength="20">
+      <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password">
+      <div id="auth-error" class="auth-error"></div>
+      <div class="auth-actions">
+        <button id="auth-login">Log in</button>
+        <button id="auth-signup">Sign up</button>
+        <button id="auth-close">Just watch</button>
+      </div>
     </div>
   </div>
 

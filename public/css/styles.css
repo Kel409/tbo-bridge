@@ -352,3 +352,30 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 .suit-chip.red { color: var(--suit-red); }
 .suit-chip.white { color: var(--suit-white); }
 #spectate.on { border-color: var(--color-accent); color: var(--color-accent-text); }
+
+/* ---- Auth bar + login/signup overlay ---- */
+#auth-bar { font-size: 0.8rem; color: var(--color-muted); margin-left: 0.5rem; }
+#auth-bar button { font: inherit; font-size: 0.75rem; padding: 0.15rem 0.5rem; margin-left: 0.4rem;
+  color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-accent); border-radius: 5px; cursor: pointer; }
+
+#auth-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.7);
+}
+#auth-overlay[hidden] { display: none; }
+#auth-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.4rem 1.5rem; width: 320px; max-width: 92vw; box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+  display: flex; flex-direction: column; gap: 0.6rem;
+}
+#auth-panel h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 600; color: var(--color-accent-text); }
+.auth-hint { margin: 0; font-size: 0.8rem; color: var(--color-muted); }
+#auth-panel input {
+  font: inherit; padding: 0.5rem 0.6rem; border-radius: 6px;
+  background: #14161a; border: 1px solid var(--color-border); color: var(--color-text);
+}
+.auth-error { color: var(--color-accent-text); font-size: 0.82rem; min-height: 1rem; }
+.auth-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.auth-actions button { flex: 1; font: inherit; padding: 0.45rem; border-radius: 6px; cursor: pointer;
+  color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); }
+#auth-login { border-color: var(--color-accent); }

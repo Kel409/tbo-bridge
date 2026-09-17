@@ -18,13 +18,18 @@ import {
 import { createLog, scoreHand, addEvents, extraBonusRow, honorBonus } from '../public/js/scoring.js';
 import { newRubber, vulnerability, applyTrickPoints } from '../public/js/rubber.js';
 import { chooseBid } from '../public/js/bidding-ai.js';
+import { initSchema, query } from './db.js';
+import { registerAuthRoutes, sessionMiddleware } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.get('/healthz', (req, res) => res.send('ok')); // liveness check for the host / monitoring
+app.use(express.json());        // parse JSON bodies for the auth routes
+registerAuthRoutes(app);        // mounts the session middleware + /api/signup, /api/login, /api/logout, /api/me
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const httpServer = createServer(app);
 const io = new Server(httpServer);
+io.engine.use(sessionMiddleware); // make the logged-in session available on socket.request.session
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
 const TURN_SECONDS = 30;  // a connected human has this long to act before the server auto-acts
@@ -54,6 +59,7 @@ const room = {
   reveal: new Set(),  // clientIds spectating with all cards revealed
   lockedThisDeal: new Set(), // clientIds barred from claiming a seat this deal (they saw the cards)
   originalHands: null, // snapshot of the current deal for honors scoring (server-only)
+  names: new Map(),    // clientId -> display username (for logged-in players)
 };
 
 function seatOfClient(cid) { return cid == null ? null : (SEATS.find((s) => room.seats[s] === cid) || null); }
@@ -83,9 +89,11 @@ function viewFor(seat, cid) {
     hands[s] = canSee ? source[s] : source[s].map(() => ({ hidden: true })); // placeholders keep the count only
   }
   const seatStatus = {};
+  const seatNames = {};
   for (const s of SEATS) {
     const v = room.seats[s];
     seatStatus[s] = v == null ? 'empty' : (v === 'bot' ? 'bot' : (v === seat ? 'you' : 'taken'));
+    seatNames[s] = (v && v !== 'bot') ? (room.names.get(v) || 'Player') : null;
   }
   return {
     game: { ...g, hands },
@@ -93,6 +101,7 @@ function viewFor(seat, cid) {
     rounds: room.rounds,
     log: room.log,
     seats: seatStatus,
+    seatNames,
     you: seat,
     turnEndsAt: room.turnEndsAt,           // epoch ms the current human turn auto-resolves, or null
     spectating: chosenSpectate,            // this client chose to spectate (drives the button)
@@ -100,8 +109,15 @@ function viewFor(seat, cid) {
     locked: room.lockedThisDeal.has(cid),  // this client cannot claim a seat until the next deal
   };
 }
+// Send the current state to one socket, attaching that socket's auth info.
+function sendTo(socket) {
+  const v = viewFor(seatOfClient(socket.data.clientId), socket.data.clientId);
+  v.loggedIn = !!socket.data.loggedIn;
+  v.username = socket.data.username || null;
+  socket.emit('state', v);
+}
 function emitStates() {
-  for (const s of sockets) s.emit('state', viewFor(seatOfClient(s.data.clientId), s.data.clientId));
+  for (const s of sockets) sendTo(s);
 }
 
 // ---- Scoring (ported from the offline main.js) ----
@@ -258,23 +274,35 @@ function onNewDeal() {
 io.on('connection', (socket) => {
   sockets.add(socket);
 
-  socket.on('hello', (clientId) => {
-    if (typeof clientId !== 'string') return;
-    socket.data.clientId = clientId;
-    const graceHandle = room.grace.get(clientId);
-    if (graceHandle) {
-      // Reconnected within the grace window: keep the held seat and hand it back from the bot.
-      clearTimeout(graceHandle);
-      room.grace.delete(clientId);
-      reevaluate(); // seat is a connected human again -> switch bot-driving back to the clock
+  socket.on('hello', (guestId) => {
+    // Logged-in users are identified by their account; guests get a per-tab id and can only spectate.
+    const sess = socket.request.session;
+    if (sess && sess.userId) {
+      socket.data.clientId = 'u:' + sess.userId;
+      socket.data.loggedIn = true;
+      socket.data.username = sess.username;
+      room.names.set(socket.data.clientId, sess.username);
+    } else if (typeof guestId === 'string') {
+      socket.data.clientId = 'g:' + guestId;
+      socket.data.loggedIn = false;
     } else {
-      socket.emit('state', viewFor(seatOfClient(clientId), clientId)); // just sync this newcomer (don't disturb the clock)
+      return;
+    }
+    const cid = socket.data.clientId;
+    const graceHandle = room.grace.get(cid);
+    if (graceHandle) {
+      clearTimeout(graceHandle);
+      room.grace.delete(cid);
+      reevaluate(); // reconnected to a held seat -> hand it back from the bot
+    } else {
+      sendTo(socket); // just sync this newcomer
     }
   });
 
   socket.on('claim', (seat) => {
     const cid = socket.data.clientId;
     if (!cid || !SEATS.includes(seat)) return;
+    if (!socket.data.loggedIn) return; // must be signed in to take a seat
     if (room.lockedThisDeal.has(cid)) return; // saw the cards this deal -> cannot sit until next deal
     const holder = room.seats[seat];
     const holderIsHuman = holder != null && holder !== 'bot';
@@ -407,6 +435,13 @@ io.on('connection', (socket) => {
 // ---- Boot ----
 room.game = newDeal(1);
 afterMove(false); // set up the first turn (a bot deals deal 1, so the bot driver starts)
+
+// Connect to Postgres, ensure the schema, and prove a read works. Non-fatal: the game still runs
+// if the database is unreachable (accounts just won't work until it is).
+initSchema()
+  .then(() => query('SELECT COUNT(*) FROM users'))
+  .then((r) => console.log(`Users in database: ${r.rows[0].count}`))
+  .catch((err) => console.error('Database not ready:', err.message));
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => console.log(`Bridge server running: http://localhost:${PORT}`));

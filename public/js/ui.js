@@ -30,6 +30,7 @@ const SEAT_NAMES = { N: 'North', E: 'East', S: 'South', W: 'West' };
 // Set at the top of each render() so the drawing helpers know the viewer's perspective.
 let MY_SEAT = null;      // which seat is "me" (null = spectator)
 let SEAT_STATUS = null;  // { N:'empty'|'bot'|'you'|'taken', ... }
+let SEAT_NAMES_MAP = null; // { N: username|null, ... } for occupied human seats
 let POS = {};            // logical seat -> screen position ('top'|'bottom'|'left'|'right'), set each render
 let SPECTATING = false;  // viewer chose to spectate (drives the button; not used for rendering)
 let REVEAL_ALL = false;  // all hands visible right now (spectating, or the deal is over)
@@ -55,6 +56,7 @@ function positionsFor(mySeat) {
 export function render(game, onHumanPlay, view) {
   MY_SEAT = view.mySeat ?? null;
   SEAT_STATUS = view.seats ?? null;
+  SEAT_NAMES_MAP = view.seatNames ?? null;
   SPECTATING = !!view.spectating;
   REVEAL_ALL = !!view.revealAll;
   LOCKED = !!view.locked;
@@ -193,6 +195,8 @@ function renderSeatLabels(game) {
   for (const seat of SEATS) {
     const head = document.getElementById('head-' + seat);
     let label = SEAT_NAMES[seat];
+    const who = SEAT_NAMES_MAP ? SEAT_NAMES_MAP[seat] : null;
+    if (who) label += ' \u00b7 ' + who; // show the seated player's username
     if (seat === MY_SEAT) label += ' (you)';
     if (game.dummyRevealed && seat === game.dummy) label += ' \u2014 dummy';
     head.textContent = label;

@@ -11,6 +11,11 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "pg": "^8.13.1",
+    "dotenv": "^16.4.7",
+    "bcryptjs": "^2.4.3",
+    "express-session": "^1.18.1",
+    "connect-pg-simple": "^9.0.1"
   }
 }

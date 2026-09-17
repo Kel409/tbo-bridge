@@ -379,3 +379,7 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 .auth-actions button { flex: 1; font: inherit; padding: 0.45rem; border-radius: 6px; cursor: pointer;
   color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); }
 #auth-login { border-color: var(--color-accent); }
+
+/* Mode switch link in the top bar. */
+#mode-link { font-size: 0.8rem; color: var(--color-accent-text); text-decoration: none; margin-left: 0.5rem; }
+#mode-link:hover { text-decoration: underline; }

@@ -1,9 +1,6 @@
-// server/index.js - build 2. Authoritative server with seats, human intents, and per-player hand hiding.
-//
-// Seat model: room.seats[seat] holds a clientId, or null meaning "bot". A human can claim any bot/open
-// seat; disconnecting reverts their seats to bots. The bot driver only acts for bot seats - when a human
-// seat is on turn, the server waits for that human's validated intent. Each client receives a view with
-// only the hands it may see (its own, and the dummy once exposed).
+// server/index.js - two independent rooms: 'normal' (accounts optional, no stats) and 'ranked'
+// (login required to sit, results update the account's win/loss record). Every game function takes the
+// room it operates on. A socket picks its room via the ?mode= query on connect.
 
 import express from 'express';
 import { createServer } from 'http';
@@ -23,71 +20,68 @@ import { registerAuthRoutes, sessionMiddleware } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.set('trust proxy', 1); // Render/Neon-style proxies terminate HTTPS upstream; trust it so secure cookies are set
-app.get('/healthz', (req, res) => res.send('ok')); // liveness check for the host / monitoring
-app.use(express.json());        // parse JSON bodies for the auth routes
-registerAuthRoutes(app);        // mounts the session middleware + /api/signup, /api/login, /api/logout, /api/me
+app.set('trust proxy', 1); // proxies terminate HTTPS upstream; trust it so secure cookies are set
+app.get('/healthz', (req, res) => res.send('ok'));
+app.use(express.json());
+registerAuthRoutes(app);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const httpServer = createServer(app);
 const io = new Server(httpServer);
-io.engine.use(sessionMiddleware); // make the logged-in session available on socket.request.session
+io.engine.use(sessionMiddleware);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 30;  // a connected human has this long to act before the server auto-acts
-const GRACE_SECONDS = 25; // a disconnected human keeps their seat this long before it reverts to a bot
+const TURN_SECONDS = 30;
+const GRACE_SECONDS = 25;
 
-// Connected sockets. Keyed per-socket (not per clientId) so no connection is ever dropped from
-// broadcasts, even if two tabs happen to share an id.
-const sockets = new Set();
-function clientConnected(cid) {
-  for (const s of sockets) if (s.data.clientId === cid) return true;
+// ---- Rooms ----
+function makeRoom(mode) {
+  return {
+    mode,                     // 'normal' | 'ranked'
+    sockets: new Set(),       // sockets currently in this room
+    game: null,
+    rubber: newRubber(),
+    log: createLog(),
+    rounds: [],
+    recorded: new Set(),
+    rubberRecorded: false,    // ranked stats recorded for the current rubber?
+    dealGameWon: null,
+    seats: { N: null, E: null, S: null, W: null },
+    timer: null,
+    clock: null,
+    turnEndsAt: null,
+    grace: new Map(),
+    reveal: new Set(),
+    lockedThisDeal: new Set(),
+    originalHands: null,
+    names: new Map(),
+  };
+}
+const rooms = { normal: makeRoom('normal'), ranked: makeRoom('ranked') };
+
+function clientConnected(room, cid) {
+  for (const s of room.sockets) if (s.data.clientId === cid) return true;
   return false;
 }
-
-// ---- One room for v1. Seats hold a clientId or null (= bot). ----
-const room = {
-  game: null,
-  rubber: newRubber(),
-  log: createLog(),
-  rounds: [],
-  recorded: new Set(),
-  dealGameWon: null,
-  seats: { N: null, E: null, S: null, W: null },
-  timer: null,        // bot-move timer
-  clock: null,        // human turn-clock timer
-  turnEndsAt: null,   // epoch ms the current human turn auto-resolves (null on bot/auto turns)
-  grace: new Map(),   // clientId -> grace timer for a disconnected human still holding a seat
-  reveal: new Set(),  // clientIds spectating with all cards revealed
-  lockedThisDeal: new Set(), // clientIds barred from claiming a seat this deal (they saw the cards)
-  originalHands: null, // snapshot of the current deal for honors scoring (server-only)
-  names: new Map(),    // clientId -> display username (for logged-in players)
-};
-
-function seatOfClient(cid) { return cid == null ? null : (SEATS.find((s) => room.seats[s] === cid) || null); }
-function seatIsEmpty(seat) { return room.seats[seat] == null; }
-
-// A seat is "auto" (played by the bot driver) if it holds a bot, or a human who is currently
-// disconnected (in grace). Empty seats are NOT auto - the game pauses there until someone fills them.
-function seatIsAuto(seat) {
+function seatOfClient(room, cid) { return cid == null ? null : (SEATS.find((s) => room.seats[s] === cid) || null); }
+function seatIsEmpty(room, seat) { return room.seats[seat] == null; }
+function seatIsAuto(room, seat) {
   const v = room.seats[seat];
   if (v === 'bot') return true;
-  if (v == null) return false;      // empty -> paused
-  return !clientConnected(v);        // human -> auto only while disconnected (grace)
+  if (v == null) return false;
+  return !clientConnected(room, v);
 }
+function clearClock(room) { clearTimeout(room.clock); room.clock = null; room.turnEndsAt = null; }
 
-function clearClock() { clearTimeout(room.clock); room.clock = null; room.turnEndsAt = null; }
-
-// ---- Per-player view: hide every hand except the viewer's own and the exposed dummy. ----
-function viewFor(seat, cid) {
+// ---- Per-player view ----
+function viewFor(room, seat, cid) {
   const g = room.game;
   const chosenSpectate = room.reveal.has(cid);
-  const revealAll = chosenSpectate || g.phase === 'done'; // spectators, and everyone once the deal is over
-  // At the end of a deal the played-out hands are empty, so show the original deal instead.
+  const revealAll = chosenSpectate || g.phase === 'done';
   const source = (g.phase === 'done' && room.originalHands) ? room.originalHands : g.hands;
   const hands = {};
   for (const s of SEATS) {
     const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy);
-    hands[s] = canSee ? source[s] : source[s].map(() => ({ hidden: true })); // placeholders keep the count only
+    hands[s] = canSee ? source[s] : source[s].map(() => ({ hidden: true }));
   }
   const seatStatus = {};
   const seatNames = {};
@@ -104,35 +98,36 @@ function viewFor(seat, cid) {
     seats: seatStatus,
     seatNames,
     you: seat,
-    turnEndsAt: room.turnEndsAt,           // epoch ms the current human turn auto-resolves, or null
-    spectating: chosenSpectate,            // this client chose to spectate (drives the button)
-    revealAll,                             // all hands are visible now (spectating, or the deal is over)
-    locked: room.lockedThisDeal.has(cid),  // this client cannot claim a seat until the next deal
+    mode: room.mode,
+    turnEndsAt: room.turnEndsAt,
+    spectating: chosenSpectate,
+    revealAll,
+    locked: room.lockedThisDeal.has(cid),
   };
 }
-// Send the current state to one socket, attaching that socket's auth info.
 function sendTo(socket) {
-  const v = viewFor(seatOfClient(socket.data.clientId), socket.data.clientId);
+  const room = socket.data.room;
+  const v = viewFor(room, seatOfClient(room, socket.data.clientId), socket.data.clientId);
   v.loggedIn = !!socket.data.loggedIn;
   v.username = socket.data.username || null;
   socket.emit('state', v);
 }
-function emitStates() {
-  for (const s of sockets) sendTo(s);
+function emitStates(room) {
+  for (const s of room.sockets) sendTo(s);
 }
 
-// ---- Scoring (ported from the offline main.js) ----
-function doPlay(seat, card) {
+// ---- Scoring ----
+function doPlay(room, seat, card) {
   const g = room.game;
   const wasPlaying = g.phase === 'playing';
   const before = g.currentTrick.length;
   playCard(g, seat, card);
   const trickDone = before === 3 && g.currentTrick.length === 0;
-  if (wasPlaying && g.phase === 'done' && g.contract) scoreDeal();
+  if (wasPlaying && g.phase === 'done' && g.contract) scoreDeal(room);
   return trickDone;
 }
 
-function scoreDeal() {
+function scoreDeal(room) {
   const g = room.game;
   const declSide = PARTNERSHIPS[g.contract.declarer];
   const rows = scoreHand(g.contract, g.tricksWon[declSide], g.vul[declSide], g.round);
@@ -142,20 +137,38 @@ function scoreDeal() {
   room.dealGameWon = outcome.gameWon;
   if (outcome.rubberBonus > 0) addEvents(room.log, [extraBonusRow(g.round, outcome.bonusSide, 'Rubber bonus', outcome.rubberBonus)]);
 
-  // Honors: from the original deal, awarded to whichever side held them (independent of the result).
   const honors = honorBonus(room.originalHands, g.contract.strain);
   if (honors) addEvents(room.log, [extraBonusRow(g.round, PARTNERSHIPS[honors.seat], 'Honors', honors.points)]);
-}
 
-function maybeFinishRound() {
-  const g = room.game;
-  if ((g.phase === 'done' || g.phase === 'passed-out') && !room.recorded.has(g.round)) {
-    room.recorded.add(g.round);
-    recordRound();
+  // Ranked only: when the rubber is decided, update the human players' win/loss records once.
+  if (room.mode === 'ranked' && room.rubber.complete && !room.rubberRecorded) {
+    room.rubberRecorded = true;
+    recordRankedResult(room);
   }
 }
 
-function recordRound() {
+async function recordRankedResult(room) {
+  const winner = room.rubber.winner; // 'NS' | 'EW'
+  for (const seat of SEATS) {
+    const v = room.seats[seat];
+    if (typeof v === 'string' && v.startsWith('u:')) {
+      const id = Number(v.slice(2));
+      const col = PARTNERSHIPS[seat] === winner ? 'games_won' : 'games_lost'; // fixed column names, not user input
+      try { await query(`UPDATE users SET ${col} = ${col} + 1 WHERE id = $1`, [id]); }
+      catch (e) { console.error('ranked stat update failed:', e.message); }
+    }
+  }
+}
+
+function maybeFinishRound(room) {
+  const g = room.game;
+  if ((g.phase === 'done' || g.phase === 'passed-out') && !room.recorded.has(g.round)) {
+    room.recorded.add(g.round);
+    recordRound(room);
+  }
+}
+
+function recordRound(room) {
   const g = room.game;
   const per = { NS: { game: 0, bonus: 0 }, EW: { game: 0, bonus: 0 } };
   for (const e of room.log) if (e.round === g.round) per[e.team][e.countsTowardGame ? 'game' : 'bonus'] += e.points;
@@ -175,65 +188,51 @@ function recordRound() {
   room.rounds.push(summary);
 }
 
-// ---- Turn driver. Bot/auto seats are played by the bot; a connected human gets a turn clock. ----
-// Who actually acts for the seat on turn. In play the DECLARER acts for the dummy (bridge rule);
-// otherwise the seat acts for itself. This is why a bot in the dummy seat must not auto-play it.
-function actorSeat() {
+// ---- Turn driver ----
+function actorSeat(room) {
   const g = room.game;
   return g.phase === 'playing' ? controllerOf(g, g.turn) : g.turn;
 }
-
-function activeSeatIsAuto() {
+function activeSeatIsAuto(room) {
   const g = room.game;
-  return (g.phase === 'bidding' || g.phase === 'playing') && seatIsAuto(actorSeat());
+  return (g.phase === 'bidding' || g.phase === 'playing') && seatIsAuto(room, actorSeat(room));
 }
-
-// Set up whoever is on turn: schedule the bot for an auto seat, or arm the clock for a connected human.
-// Does not reset an already-running clock (so a connect/claim elsewhere doesn't extend the active turn).
-function setupTurn(trickDone) {
+function setupTurn(room, trickDone) {
   clearTimeout(room.timer);
   const g = room.game;
-  if (g.phase !== 'bidding' && g.phase !== 'playing') { clearClock(); return; }
-  const actor = actorSeat();
-  if (seatIsEmpty(actor)) { clearClock(); return; } // paused: the controlling seat is empty
-  if (seatIsAuto(actor)) {
-    clearClock();
+  if (g.phase !== 'bidding' && g.phase !== 'playing') { clearClock(room); return; }
+  const actor = actorSeat(room);
+  if (seatIsEmpty(room, actor)) { clearClock(room); return; }
+  if (seatIsAuto(room, actor)) {
+    clearClock(room);
     const delay = g.phase === 'bidding' ? BID_GAP : (trickDone ? TRICK_PAUSE : PLAY_GAP);
-    room.timer = setTimeout(botStep, delay);
+    room.timer = setTimeout(() => botStep(room), delay);
   } else if (room.clock == null) {
     room.turnEndsAt = Date.now() + TURN_SECONDS * 1000;
-    room.clock = setTimeout(onTurnTimeout, TURN_SECONDS * 1000);
+    room.clock = setTimeout(() => onTurnTimeout(room), TURN_SECONDS * 1000);
   }
 }
-
-// Called after an actual move (turn advanced): drop the old clock and set a fresh one for the new turn.
-function afterMove(trickDone) {
-  clearClock();
-  setupTurn(trickDone);
-  emitStates();
+function afterMove(room, trickDone) {
+  clearClock(room);
+  setupTurn(room, trickDone);
+  emitStates(room);
 }
-
-// Called when seat occupancy changed but the turn did not (claim/release/connect/disconnect):
-// re-evaluate the driver without disturbing a running clock.
-function reevaluate() {
-  setupTurn(false);
-  emitStates();
+function reevaluate(room) {
+  setupTurn(room, false);
+  emitStates(room);
 }
-
-// The connected human ran out of time: pass in bidding, play the lowest legal card in play.
-function onTurnTimeout() {
+function onTurnTimeout(room) {
   const g = room.game;
-  clearClock();
+  clearClock(room);
   if (g.phase !== 'bidding' && g.phase !== 'playing') return;
   let trickDone = false;
   if (g.phase === 'bidding') makePass(g, g.turn);
-  else trickDone = doPlay(g.turn, pickAutoCard(g, g.turn));
-  maybeFinishRound();
-  afterMove(trickDone);
+  else trickDone = doPlay(room, g.turn, pickAutoCard(g, g.turn));
+  maybeFinishRound(room);
+  afterMove(room, trickDone);
 }
-
-function botStep() {
-  if (!activeSeatIsAuto()) return; // seat became a connected human, or the hand ended
+function botStep(room) {
+  if (!activeSeatIsAuto(room)) return;
   const g = room.game;
   let trickDone = false;
   if (g.phase === 'bidding') {
@@ -241,42 +240,43 @@ function botStep() {
     if (bid) makeBid(g, g.turn, bid.level, bid.strain);
     else makePass(g, g.turn);
   } else {
-    trickDone = doPlay(g.turn, pickAutoCard(g, g.turn));
+    trickDone = doPlay(room, g.turn, pickAutoCard(g, g.turn));
   }
-  maybeFinishRound();
-  afterMove(trickDone);
+  maybeFinishRound(room);
+  afterMove(room, trickDone);
 }
 
-function newDeal(round) {
+function newDeal(room, round) {
   const g = newGame(round);
   g.vul = vulnerability(room.rubber);
   room.dealGameWon = null;
-  room.lockedThisDeal = new Set(room.reveal); // anyone still spectating has seen the new deal
-  room.originalHands = structuredClone(g.hands); // kept on the room (not the game) so it never reaches clients
+  room.lockedThisDeal = new Set(room.reveal);
+  room.originalHands = structuredClone(g.hands);
   return g;
 }
-
-function startNewRubber() {
+function startNewRubber(room) {
   room.rubber = newRubber();
   room.log = createLog();
   room.rounds = [];
   room.recorded.clear();
+  room.rubberRecorded = false;
 }
-
-function onNewDeal() {
+function onNewDeal(room) {
   const g = room.game;
-  if (g.phase !== 'done' && g.phase !== 'passed-out') return; // only between hands
-  if (room.rubber.complete) { startNewRubber(); room.game = newDeal(1); }
-  else room.game = newDeal(g.round + 1);
-  afterMove(false); // new turn (the dealer): fresh clock or bot
+  if (g.phase !== 'done' && g.phase !== 'passed-out') return;
+  if (room.rubber.complete) { startNewRubber(room); room.game = newDeal(room, 1); }
+  else room.game = newDeal(room, g.round + 1);
+  afterMove(room, false);
 }
 
 // ---- Connections and intents ----
 io.on('connection', (socket) => {
-  sockets.add(socket);
+  const mode = socket.handshake.query.mode === 'ranked' ? 'ranked' : 'normal';
+  const room = rooms[mode];
+  socket.data.room = room;
+  room.sockets.add(socket);
 
   socket.on('hello', (guestId) => {
-    // Logged-in users are identified by their account; guests get a per-tab id and can only spectate.
     const sess = socket.request.session;
     if (sess && sess.userId) {
       socket.data.clientId = 'u:' + sess.userId;
@@ -294,151 +294,145 @@ io.on('connection', (socket) => {
     if (graceHandle) {
       clearTimeout(graceHandle);
       room.grace.delete(cid);
-      reevaluate(); // reconnected to a held seat -> hand it back from the bot
+      reevaluate(room);
     } else {
-      sendTo(socket); // just sync this newcomer
+      sendTo(socket);
     }
   });
 
   socket.on('claim', (seat) => {
     const cid = socket.data.clientId;
     if (!cid || !SEATS.includes(seat)) return;
-    if (!socket.data.loggedIn) return; // must be signed in to take a seat
-    if (room.lockedThisDeal.has(cid)) return; // saw the cards this deal -> cannot sit until next deal
+    if (room.mode === 'ranked' && !socket.data.loggedIn) return; // ranked requires an account to sit
+    if (room.lockedThisDeal.has(cid)) return;
     const holder = room.seats[seat];
     const holderIsHuman = holder != null && holder !== 'bot';
-    // Blocked only if another human holds it and is connected or briefly away (in grace). Bots/empty are free.
-    if (holderIsHuman && holder !== cid && (clientConnected(holder) || room.grace.has(holder))) return;
-    for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null; // one seat per client
+    if (holderIsHuman && holder !== cid && (clientConnected(room, holder) || room.grace.has(holder))) return;
+    for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
     room.seats[seat] = cid;
-    reevaluate();
+    reevaluate(room);
   });
 
-  // Spectate = reveal all cards. Gives up any seat and locks this client out of the current deal.
   socket.on('spectate', (on) => {
     const cid = socket.data.clientId;
     if (!cid) return;
     if (on) {
-      for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null; // leave the table
+      for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
       room.reveal.add(cid);
-      room.lockedThisDeal.add(cid); // they have now seen every hand this deal
+      room.lockedThisDeal.add(cid);
     } else {
-      room.reveal.delete(cid); // stop peeking (still locked out for the rest of this deal)
+      room.reveal.delete(cid);
     }
-    reevaluate();
+    reevaluate(room);
   });
 
   socket.on('release', () => {
     const cid = socket.data.clientId;
     if (!cid) return;
-    for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null; // seat becomes empty
-    reevaluate();
+    for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
+    reevaluate(room);
   });
 
   socket.on('addBot', (seat) => {
-    if (!SEATS.includes(seat) || room.seats[seat] != null) return; // only fill an empty seat
+    if (room.mode === 'ranked') return; // ranked is players-only
+    if (!SEATS.includes(seat) || room.seats[seat] != null) return;
     room.seats[seat] = 'bot';
-    reevaluate();
+    reevaluate(room);
   });
 
   socket.on('removeBot', (seat) => {
-    if (!SEATS.includes(seat) || room.seats[seat] !== 'bot') return; // only remove a bot
+    if (!SEATS.includes(seat) || room.seats[seat] !== 'bot') return;
     room.seats[seat] = null;
-    reevaluate();
+    reevaluate(room);
   });
 
-  // TEMPORARY: wipe scores and start a fresh deal. Players keep their seats.
   socket.on('resetAll', () => {
     clearTimeout(room.timer);
-    clearClock();
+    clearClock(room);
     for (const h of room.grace.values()) clearTimeout(h);
     room.grace.clear();
-    room.rubber = newRubber();
-    room.log = createLog();
-    room.rounds = [];
-    room.recorded.clear();
-    room.game = newDeal(1);
-    afterMove(false);
+    startNewRubber(room);
+    room.game = newDeal(room, 1);
+    afterMove(room, false);
   });
 
   socket.on('bid', ({ level, strain } = {}) => {
-    const seat = seatOfClient(socket.data.clientId);
+    const seat = seatOfClient(room, socket.data.clientId);
     const g = room.game;
     if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
     if (!isLegalBid(g, level, strain)) return;
     makeBid(g, seat, level, strain);
-    maybeFinishRound();
-    afterMove(false);
+    maybeFinishRound(room);
+    afterMove(room, false);
   });
 
   socket.on('pass', () => {
-    const seat = seatOfClient(socket.data.clientId);
+    const seat = seatOfClient(room, socket.data.clientId);
     const g = room.game;
     if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
     makePass(g, seat);
-    maybeFinishRound();
-    afterMove(false);
+    maybeFinishRound(room);
+    afterMove(room, false);
   });
 
   socket.on('double', () => {
-    const seat = seatOfClient(socket.data.clientId);
+    const seat = seatOfClient(room, socket.data.clientId);
     const g = room.game;
     if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
-    makeDouble(g, seat); // no-ops if illegal
-    maybeFinishRound();
-    afterMove(false);
+    makeDouble(g, seat);
+    maybeFinishRound(room);
+    afterMove(room, false);
   });
 
   socket.on('redouble', () => {
-    const seat = seatOfClient(socket.data.clientId);
+    const seat = seatOfClient(room, socket.data.clientId);
     const g = room.game;
     if (!seat || g.phase !== 'bidding' || g.turn !== seat) return;
-    makeRedouble(g, seat); // no-ops if illegal
-    maybeFinishRound();
-    afterMove(false);
+    makeRedouble(g, seat);
+    maybeFinishRound(room);
+    afterMove(room, false);
   });
 
   socket.on('play', ({ suit, rank } = {}) => {
-    const seat = seatOfClient(socket.data.clientId);
+    const seat = seatOfClient(room, socket.data.clientId);
     const g = room.game;
     if (!seat || g.phase !== 'playing') return;
-    if (controllerOf(g, g.turn) !== seat) return;               // you control the seat on turn (declarer plays dummy)
+    if (controllerOf(g, g.turn) !== seat) return;
     const hand = g.hands[g.turn];
     const card = hand.find((c) => c.suit === suit && c.rank === rank);
-    if (!card || !isLegal(g, g.turn, card)) return;             // must be a real, legal card
-    const trickDone = doPlay(g.turn, card);
-    maybeFinishRound();
-    afterMove(trickDone);
+    if (!card || !isLegal(g, g.turn, card)) return;
+    const trickDone = doPlay(room, g.turn, card);
+    maybeFinishRound(room);
+    afterMove(room, trickDone);
   });
 
-  socket.on('newDeal', onNewDeal);
+  socket.on('newDeal', () => onNewDeal(room));
 
   socket.on('disconnect', () => {
-    sockets.delete(socket);
+    room.sockets.delete(socket);
     const cid = socket.data.clientId;
-    if (!cid || clientConnected(cid)) return; // another tab with the same id is still here; keep the seat
-    const seat = seatOfClient(cid);
+    if (!cid || clientConnected(room, cid)) return;
+    const seat = seatOfClient(room, cid);
     if (seat && !room.grace.has(cid)) {
-      // Hold the seat for a grace window; bots auto-play it meanwhile (it is now "auto" since disconnected).
       const handle = setTimeout(() => {
         room.grace.delete(cid);
-        if (room.seats[seat] === cid && !clientConnected(cid)) room.seats[seat] = null; // grace expired -> bot
-        reevaluate();
+        if (room.seats[seat] === cid && !clientConnected(room, cid)) room.seats[seat] = null;
+        reevaluate(room);
       }, GRACE_SECONDS * 1000);
       room.grace.set(cid, handle);
     }
     room.reveal.delete(cid);
     room.lockedThisDeal.delete(cid);
-    reevaluate(); // the seat is now auto; the bot driver takes over its turns
+    reevaluate(room);
   });
 });
 
 // ---- Boot ----
-room.game = newDeal(1);
-afterMove(false); // set up the first turn (a bot deals deal 1, so the bot driver starts)
+for (const room of Object.values(rooms)) {
+  room.game = newDeal(room, 1);
+  afterMove(room, false);
+}
 
-// Connect to Postgres, ensure the schema, and prove a read works. Non-fatal: the game still runs
-// if the database is unreachable (accounts just won't work until it is).
 initSchema()
   .then(() => query('SELECT COUNT(*) FROM users'))
   .then((r) => console.log(`Users in database: ${r.rows[0].count}`))

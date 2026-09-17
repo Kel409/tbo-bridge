@@ -37,6 +37,7 @@ let REVEAL_ALL = false;  // all hands visible right now (spectating, or the deal
 let LOCKED = false;      // viewer cannot claim a seat this deal
 let SUIT_ORDER = ['S', 'H', 'D', 'C']; // viewer's preferred suit order for their own hand
 let BIDS_OPEN = false;   // bid-order popup shown
+let MODE = 'normal';     // 'normal' | 'ranked' (ranked hides the add-bot control)
 
 const CW = ['N', 'E', 'S', 'W']; // clockwise
 function nextCW(s) { return CW[(CW.indexOf(s) + 1) % 4]; }
@@ -62,6 +63,7 @@ export function render(game, onHumanPlay, view) {
   LOCKED = !!view.locked;
   SUIT_ORDER = view.suitOrder || ['S', 'H', 'D', 'C'];
   BIDS_OPEN = !!view.bidsOpen;
+  MODE = view.mode || 'normal';
   POS = positionsFor(MY_SEAT);
   for (const seat of SEATS) {
     const section = document.getElementById('seat-' + seat);
@@ -102,7 +104,7 @@ function renderSeatControls() {
     if (st === 'you') el.innerHTML = btn('release', 'Leave');
     else if (st === 'taken') el.innerHTML = '';
     else if (st === 'bot') el.innerHTML = sit + btn('removeBot', '\u2212 Bot');
-    else el.innerHTML = sit + btn('addBot', '+ Bot'); // empty
+    else el.innerHTML = MODE === 'ranked' ? sit : sit + btn('addBot', '+ Bot'); // ranked: players only, no bots
   }
 }
 

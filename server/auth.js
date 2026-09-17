@@ -69,9 +69,16 @@ export function registerAuthRoutes(app) {
     req.session.destroy(() => res.json({ ok: true }));
   });
 
-  // Who am I? Used by the client on load to know if there is a live session.
-  app.get('/api/me', (req, res) => {
-    if (req.session.userId) res.json({ username: req.session.username });
-    else res.json({ username: null });
+  // Who am I? Returns the account and its win/loss record, or null if not signed in.
+  app.get('/api/me', async (req, res) => {
+    if (!req.session.userId) return res.json({ username: null });
+    try {
+      const r = await query('SELECT username, games_won, games_lost FROM users WHERE id = $1', [req.session.userId]);
+      const u = r.rows[0];
+      if (!u) return res.json({ username: null });
+      res.json({ username: u.username, gamesWon: u.games_won, gamesLost: u.games_lost });
+    } catch {
+      res.json({ username: req.session.username, gamesWon: 0, gamesLost: 0 });
+    }
   });
 }

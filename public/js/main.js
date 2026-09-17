@@ -3,7 +3,19 @@
 
 import { render } from './ui.js';
 
-const socket = io(); // global from /socket.io/socket.io.js
+// Mode from the URL: ?mode=ranked, otherwise normal. Ranked requires an account to sit and records results.
+const mode = new URLSearchParams(location.search).get('mode') === 'ranked' ? 'ranked' : 'normal';
+const socket = io({ query: { mode } }); // connect to this mode's room
+
+// Title and the switch link.
+const titleEl = document.getElementById('title');
+if (titleEl) titleEl.textContent = mode === 'ranked' ? 'Bridge Ranked' : 'Bridge';
+document.title = mode === 'ranked' ? 'Bridge Ranked' : 'Bridge';
+const modeLink = document.getElementById('mode-link');
+if (modeLink) {
+  modeLink.textContent = mode === 'ranked' ? 'Play Normal' : 'Play Ranked';
+  modeLink.href = mode === 'ranked' ? '?mode=normal' : '?mode=ranked';
+}
 
 // A per-tab id (sessionStorage is NOT shared between tabs/windows, unlike localStorage), so two
 // windows in the same browser are two different players. It survives a refresh but not a tab close.
@@ -19,6 +31,7 @@ let scoreboardOpen = false; // local: is the scoreboard popup showing
 let bidsOpen = false;       // local: is the bid-order popup showing
 let seenRounds = 0;         // to auto-open the scoreboard when a deal finishes
 let suitOrder = (localStorage.getItem('suitOrder') || 'SHDC').split(''); // viewer's preferred suit order
+let rubberWasComplete = false; // to detect a ranked rubber finishing (for stats refresh)
 
 function draw() {
   if (!state) return;
@@ -36,6 +49,7 @@ function draw() {
     locked: state.locked,
     suitOrder,
     bidsOpen,
+    mode,
   });
 }
 
@@ -53,6 +67,9 @@ socket.on('state', (s) => {
     spectateBtn.classList.toggle('on', !!s.spectating);
   }
   renderAuthBar();
+  // After a ranked rubber is decided, the server updates records; refresh ours to show it.
+  if (mode === 'ranked' && s.rubber && s.rubber.complete && !rubberWasComplete) refreshMe();
+  rubberWasComplete = !!(s.rubber && s.rubber.complete);
   draw();
   updateClock();
 });
@@ -88,7 +105,7 @@ document.getElementById('table').addEventListener('click', (e) => {
   const { action, seat } = b.dataset;
   if (action === 'release') socket.emit('release');
   else if (action === 'claim') {
-    if (!(state && state.loggedIn)) { openAuth(); return; } // must sign in to sit
+    if (mode === 'ranked' && !(state && state.loggedIn)) { openAuth(); return; } // ranked needs an account
     socket.emit('claim', seat);
   }
   else if (action === 'addBot') socket.emit('addBot', seat);
@@ -159,10 +176,19 @@ function closeAuth() { const o = document.getElementById('auth-overlay'); if (o)
 function renderAuthBar() {
   const el = document.getElementById('auth-bar');
   if (!el || !state) return;
-  el.innerHTML = state.loggedIn
-    ? `${state.username} <button id="auth-logout">Logout</button>`
-    : '<button id="auth-open">Log in</button>';
+  if (state.loggedIn) {
+    const wl = myStats && myStats.username != null ? ` \u00b7 ${myStats.gamesWon}W/${myStats.gamesLost}L` : '';
+    el.innerHTML = `${state.username}${wl} <button id="auth-logout">Logout</button>`;
+  } else {
+    el.innerHTML = '<button id="auth-open">Log in</button>';
+  }
 }
+
+let myStats = null;
+async function refreshMe() {
+  try { myStats = await (await fetch('/api/me')).json(); renderAuthBar(); } catch { /* ignore */ }
+}
+refreshMe(); // load the current user's record on start
 
 async function submitAuth(kind) {
   const username = document.getElementById('auth-username').value.trim();

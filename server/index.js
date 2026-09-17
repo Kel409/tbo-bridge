@@ -23,6 +23,7 @@ import { registerAuthRoutes, sessionMiddleware } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set('trust proxy', 1); // Render/Neon-style proxies terminate HTTPS upstream; trust it so secure cookies are set
 app.get('/healthz', (req, res) => res.send('ok')); // liveness check for the host / monitoring
 app.use(express.json());        // parse JSON bodies for the auth routes
 registerAuthRoutes(app);        // mounts the session middleware + /api/signup, /api/login, /api/logout, /api/me

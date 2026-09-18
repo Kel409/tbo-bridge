@@ -12,7 +12,7 @@ import {
   newGame, makeBid, makePass, makeDouble, makeRedouble, playCard, pickAutoCard,
   isLegal, isLegalBid, controllerOf, PARTNERSHIPS, SEATS,
 } from '../public/js/game.js';
-import { createLog, scoreHand, addEvents, extraBonusRow, honorBonus } from '../public/js/scoring.js';
+import { createLog, scoreHand, addEvents, extraBonusRow, honorBonus, totalFor } from '../public/js/scoring.js';
 import { newRubber, vulnerability, applyTrickPoints } from '../public/js/rubber.js';
 import { chooseBid } from '../public/js/bidding-ai.js';
 import { initSchema, query } from './db.js';
@@ -44,6 +44,7 @@ function makeRoom(mode) {
     rounds: [],
     recorded: new Set(),
     rubberRecorded: false,    // ranked stats recorded for the current rubber?
+    dealTally: { NS: { won: 0, lost: 0 }, EW: { won: 0, lost: 0 } }, // deals won/lost this rubber
     dealGameWon: null,
     seats: { N: null, E: null, S: null, W: null },
     timer: null,
@@ -132,6 +133,14 @@ function scoreDeal(room) {
   const declSide = PARTNERSHIPS[g.contract.declarer];
   const rows = scoreHand(g.contract, g.tricksWon[declSide], g.vul[declSide], g.round);
   addEvents(room.log, rows);
+
+  // Deal result: declarer wins the deal by making the contract, defenders by setting it.
+  const made = g.tricksWon[declSide] >= g.contract.level + 6;
+  const dealWinner = made ? declSide : (declSide === 'NS' ? 'EW' : 'NS');
+  const dealLoser = dealWinner === 'NS' ? 'EW' : 'NS';
+  room.dealTally[dealWinner].won += 1;
+  room.dealTally[dealLoser].lost += 1;
+
   const trickPoints = rows.filter((r) => r.countsTowardGame && r.team === declSide).reduce((s, r) => s + r.points, 0);
   const outcome = applyTrickPoints(room.rubber, declSide, trickPoints);
   room.dealGameWon = outcome.gameWon;
@@ -140,24 +149,53 @@ function scoreDeal(room) {
   const honors = honorBonus(room.originalHands, g.contract.strain);
   if (honors) addEvents(room.log, [extraBonusRow(g.round, PARTNERSHIPS[honors.seat], 'Honors', honors.points)]);
 
-  // Ranked only: when the rubber is decided, update the human players' win/loss records once.
+  // Ranked: settle the entire rubber once, when it is decided.
   if (room.mode === 'ranked' && room.rubber.complete && !room.rubberRecorded) {
     room.rubberRecorded = true;
-    recordRankedResult(room);
+    settleRubber(room);
   }
 }
 
-async function recordRankedResult(room) {
-  const winner = room.rubber.winner; // 'NS' | 'EW'
+// Ranked settlement: net zero-sum points (score difference), deals and rubber counts, and a history row.
+async function settleRubber(room) {
+  const nsTotal = totalFor(room.log, 'NS');
+  const ewTotal = totalFor(room.log, 'EW');
+  const delta = { NS: nsTotal - ewTotal, EW: ewTotal - nsTotal }; // sums to zero across the four players
+  const winner = room.rubber.winner;
+
+  const seats = {};
+  const players = [];
   for (const seat of SEATS) {
     const v = room.seats[seat];
     if (typeof v === 'string' && v.startsWith('u:')) {
       const id = Number(v.slice(2));
-      const col = PARTNERSHIPS[seat] === winner ? 'games_won' : 'games_lost'; // fixed column names, not user input
-      try { await query(`UPDATE users SET ${col} = ${col} + 1 WHERE id = $1`, [id]); }
-      catch (e) { console.error('ranked stat update failed:', e.message); }
+      seats[seat] = { userId: id, username: room.names.get(v) || 'Player' };
+      players.push(id);
+    } else {
+      seats[seat] = null;
     }
   }
+
+  for (const seat of SEATS) {
+    const info = seats[seat];
+    if (!info) continue;
+    const side = PARTNERSHIPS[seat];
+    const rw = side === winner ? 1 : 0;
+    try {
+      await query(
+        `UPDATE users SET points = points + $1, deals_won = deals_won + $2, deals_lost = deals_lost + $3,
+                          rubbers_won = rubbers_won + $4, rubbers_lost = rubbers_lost + $5 WHERE id = $6`,
+        [delta[side], room.dealTally[side].won, room.dealTally[side].lost, rw, 1 - rw, info.userId],
+      );
+    } catch (e) { console.error('rubber stat update failed:', e.message); }
+  }
+
+  try {
+    await query(
+      'INSERT INTO matches (ns_score, ew_score, winner, seats, rounds, players) VALUES ($1, $2, $3, $4, $5, $6)',
+      [nsTotal, ewTotal, winner, JSON.stringify(seats), JSON.stringify(room.rounds), players],
+    );
+  } catch (e) { console.error('match insert failed:', e.message); }
 }
 
 function maybeFinishRound(room) {
@@ -260,6 +298,7 @@ function startNewRubber(room) {
   room.rounds = [];
   room.recorded.clear();
   room.rubberRecorded = false;
+  room.dealTally = { NS: { won: 0, lost: 0 }, EW: { won: 0, lost: 0 } };
 }
 function onNewDeal(room) {
   const g = room.game;

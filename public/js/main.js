@@ -177,7 +177,7 @@ function renderAuthBar() {
   const el = document.getElementById('auth-bar');
   if (!el || !state) return;
   if (state.loggedIn) {
-    const wl = myStats && myStats.username != null ? ` \u00b7 ${myStats.gamesWon}W/${myStats.gamesLost}L` : '';
+    const wl = myStats && myStats.username != null ? ` \u00b7 ${myStats.points} pts \u00b7 ${myStats.rubbersWon}-${myStats.rubbersLost}` : '';
     el.innerHTML = `${state.username}${wl} <button id="auth-logout">Logout</button>`;
   } else {
     el.innerHTML = '<button id="auth-open">Log in</button>';
@@ -223,3 +223,63 @@ document.getElementById('auth-login').addEventListener('click', () => submitAuth
 document.getElementById('auth-signup').addEventListener('click', () => submitAuth('signup'));
 document.getElementById('auth-close').addEventListener('click', closeAuth);
 document.getElementById('auth-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAuth('login'); });
+
+// ---- Match history popup ----
+const SUIT_SYM = { S: '\u2660', H: '\u2665', D: '\u2666', C: '\u2663' };
+
+function openHistory() {
+  const o = document.getElementById('history-overlay');
+  if (o) o.hidden = false;
+  loadHistory();
+}
+function closeHistory() { const o = document.getElementById('history-overlay'); if (o) o.hidden = true; }
+
+async function loadHistory() {
+  const statsEl = document.getElementById('history-stats');
+  const contentEl = document.getElementById('history-content');
+  if (!(state && state.loggedIn)) { statsEl.innerHTML = ''; contentEl.innerHTML = '<p class="sb-empty">Log in to see your match history.</p>'; return; }
+  // Lifetime summary from /api/me (already fetched into myStats), then the match list.
+  if (myStats && myStats.username != null) {
+    const cls = myStats.points >= 0 ? 'pos' : 'neg';
+    statsEl.innerHTML = `Lifetime: <span class="${cls}">${myStats.points} pts</span> \u00b7 `
+      + `rubbers ${myStats.rubbersWon}-${myStats.rubbersLost} \u00b7 deals ${myStats.dealsWon}-${myStats.dealsLost}`;
+  }
+  contentEl.innerHTML = 'Loading\u2026';
+  try {
+    const data = await (await fetch('/api/history')).json();
+    contentEl.innerHTML = data.matches.length ? data.matches.map(matchHTML).join('') : '<p class="sb-empty">No ranked rubbers yet.</p>';
+  } catch {
+    contentEl.innerHTML = '<p class="sb-empty">Could not load history.</p>';
+  }
+}
+
+// Side label: the two seated usernames if present, otherwise the compass seats.
+function sideLabel(seats, a, b) {
+  const na = seats[a] && seats[a].username;
+  const nb = seats[b] && seats[b].username;
+  const names = { N: 'North', E: 'East', S: 'South', W: 'West' };
+  return `${na || names[a]} & ${nb || names[b]}`;
+}
+
+function matchHTML(m) {
+  const when = new Date(m.created_at).toLocaleString();
+  const nsWin = m.winner === 'NS';
+  const ns = `<span class="${nsWin ? 'win' : ''}">${sideLabel(m.seats, 'N', 'S')} — ${m.ns_score}</span>`;
+  const ew = `<span class="${!nsWin ? 'win' : ''}">${sideLabel(m.seats, 'E', 'W')} — ${m.ew_score}</span>`;
+  const rows = (m.rounds || []).map((r) => {
+    const result = r.passedOut ? 'Passed out' : `${r.contract} by ${r.declarer} (${r.made ? `made${r.diff > 0 ? ` +${r.diff}` : ''}` : `down ${-r.diff}`})`;
+    return `<tr><td>${r.round}</td><td>${result}</td><td>${r.tricks.NS}\u2013${r.tricks.EW}</td>
+      <td>${r.points.NS.game}</td><td>${r.points.NS.bonus}</td><td>${r.points.EW.game}</td><td>${r.points.EW.bonus}</td></tr>`;
+  }).join('');
+  return `<div class="match">
+    <div class="match-head"><span>${ns}</span><span>${ew}</span></div>
+    <div class="match-date">${when}</div>
+    <table class="sb-table">
+      <thead><tr><th>Deal</th><th>Contract</th><th>Tr</th><th>NS g</th><th>NS b</th><th>EW g</th><th>EW b</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+document.getElementById('history-toggle').addEventListener('click', openHistory);
+document.getElementById('history-close').addEventListener('click', closeHistory);

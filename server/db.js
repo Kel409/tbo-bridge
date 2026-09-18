@@ -24,18 +24,37 @@ export function query(text, params) {
   return pool.query(text, params);
 }
 
-// Create the users table once, if it does not already exist. Passwords are stored ONLY as a hash
-// (added in the auth build); this build just proves the connection and the table.
+// Create/upgrade the schema. Safe to run on every boot: CREATE IF NOT EXISTS for new databases,
+// ALTER ... ADD COLUMN IF NOT EXISTS to upgrade an existing users table without touching its rows.
 export async function initSchema() {
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id            SERIAL PRIMARY KEY,
       username      TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      games_won     INTEGER NOT NULL DEFAULT 0,
-      games_lost    INTEGER NOT NULL DEFAULT 0,
+      points        INTEGER NOT NULL DEFAULT 0,   -- lifetime net points (zero-sum across all accounts)
+      deals_won     INTEGER NOT NULL DEFAULT 0,
+      deals_lost    INTEGER NOT NULL DEFAULT 0,
+      rubbers_won   INTEGER NOT NULL DEFAULT 0,
+      rubbers_lost  INTEGER NOT NULL DEFAULT 0,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS points        INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS deals_won     INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS deals_lost    INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_won   INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_lost  INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE IF NOT EXISTS matches (
+      id         SERIAL PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      ns_score   INTEGER NOT NULL,
+      ew_score   INTEGER NOT NULL,
+      winner     TEXT,                 -- 'NS' | 'EW'
+      seats      JSONB NOT NULL,       -- { N:{userId,username}|null, E, S, W }
+      rounds     JSONB NOT NULL,       -- the per-deal scoreboard for this rubber
+      players    INTEGER[] NOT NULL    -- user ids who were seated (for "my history" filtering)
+    );
   `);
-  console.log('Database ready (users table ensured).');
+  console.log('Database ready (users + matches ensured).');
 }

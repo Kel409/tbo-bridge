@@ -383,3 +383,29 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 /* Mode switch link in the top bar. */
 #mode-link { font-size: 0.8rem; color: var(--color-accent-text); text-decoration: none; margin-left: 0.5rem; }
 #mode-link:hover { text-decoration: underline; }
+
+/* ---- Match history popup ---- */
+#history-toggle {
+  position: fixed; right: 0; top: calc(50% + 180px); transform: translateY(-50%);
+  writing-mode: vertical-rl; padding: 0.7rem 0.4rem;
+  border-radius: 6px 0 0 6px; border-color: var(--color-accent); letter-spacing: 0.06em; z-index: 50;
+}
+#history-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6);
+}
+#history-overlay[hidden] { display: none; }
+#history-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.2rem 1.4rem; min-width: 340px; max-width: 92vw; max-height: 85vh; overflow: auto;
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+}
+#history-panel h2 { margin: 0 0 0.8rem; font-family: Georgia, "Times New Roman", serif; font-weight: 600; color: var(--color-accent-text); }
+#history-stats { color: var(--color-text); font-size: 0.9rem; margin-bottom: 1rem; }
+#history-stats .pos { color: var(--suit-white); }
+#history-stats .neg { color: var(--color-accent-text); }
+#history-close { margin-top: 1rem; border-color: var(--color-accent); }
+.match { border: 1px solid var(--color-border); border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 0.9rem; }
+.match-head { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem; }
+.match-head .win { color: var(--suit-white); font-weight: 700; }
+.match-date { color: var(--color-muted); font-size: 0.78rem; }

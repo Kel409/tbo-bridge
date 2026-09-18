@@ -59,6 +59,15 @@
   <!-- Scoreboard: the side tab toggles it during play; it also pops up after each deal. -->
   <button id="sb-toggle" aria-label="Toggle scoreboard">Scoreboard</button>
   <button id="bids-toggle" aria-label="Toggle bid history">Bids</button>
+  <button id="history-toggle" aria-label="Toggle match history">History</button>
+  <div id="history-overlay" hidden>
+    <div id="history-panel" role="dialog" aria-modal="true" aria-label="Match history">
+      <h2>Match history</h2>
+      <div id="history-stats"></div>
+      <div id="history-content"></div>
+      <button id="history-close">Close</button>
+    </div>
+  </div>
   <div id="bids-overlay" hidden>
     <div id="bids-panel" role="dialog" aria-modal="true" aria-label="Bid history">
       <h2>Bid order</h2>

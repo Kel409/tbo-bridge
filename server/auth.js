@@ -69,16 +69,40 @@ export function registerAuthRoutes(app) {
     req.session.destroy(() => res.json({ ok: true }));
   });
 
-  // Who am I? Returns the account and its win/loss record, or null if not signed in.
+  // Who am I? Returns the account and its lifetime record, or null if not signed in.
   app.get('/api/me', async (req, res) => {
     if (!req.session.userId) return res.json({ username: null });
     try {
-      const r = await query('SELECT username, games_won, games_lost FROM users WHERE id = $1', [req.session.userId]);
+      const r = await query(
+        'SELECT username, points, deals_won, deals_lost, rubbers_won, rubbers_lost FROM users WHERE id = $1',
+        [req.session.userId],
+      );
       const u = r.rows[0];
       if (!u) return res.json({ username: null });
-      res.json({ username: u.username, gamesWon: u.games_won, gamesLost: u.games_lost });
+      res.json({
+        username: u.username,
+        points: u.points,
+        dealsWon: u.deals_won, dealsLost: u.deals_lost,
+        rubbersWon: u.rubbers_won, rubbersLost: u.rubbers_lost,
+      });
     } catch {
-      res.json({ username: req.session.username, gamesWon: 0, gamesLost: 0 });
+      res.json({ username: req.session.username });
+    }
+  });
+
+  // My ranked match history (most recent first).
+  app.get('/api/history', async (req, res) => {
+    if (!req.session.userId) return res.json({ matches: [] });
+    try {
+      const r = await query(
+        `SELECT id, created_at, ns_score, ew_score, winner, seats, rounds
+         FROM matches WHERE $1 = ANY(players) ORDER BY id DESC LIMIT 25`,
+        [req.session.userId],
+      );
+      res.json({ matches: r.rows });
+    } catch (e) {
+      console.error('history query failed:', e.message);
+      res.json({ matches: [] });
     }
   });
 }

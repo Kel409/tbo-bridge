@@ -69,12 +69,12 @@ export function registerAuthRoutes(app) {
     req.session.destroy(() => res.json({ ok: true }));
   });
 
-  // Who am I? Returns the account and its lifetime record, or null if not signed in.
+  // Who am I? Account, lifetime record, effective avatar, and whether this account is the admin.
   app.get('/api/me', async (req, res) => {
     if (!req.session.userId) return res.json({ username: null });
     try {
       const r = await query(
-        'SELECT username, points, deals_won, deals_lost, rubbers_won, rubbers_lost FROM users WHERE id = $1',
+        'SELECT username, points, deals_won, deals_lost, rubbers_won, rubbers_lost, avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE id = $1',
         [req.session.userId],
       );
       const u = r.rows[0];
@@ -84,6 +84,9 @@ export function registerAuthRoutes(app) {
         points: u.points,
         dealsWon: u.deals_won, dealsLost: u.deals_lost,
         rubbersWon: u.rubbers_won, rubbersLost: u.rubbers_lost,
+        avatar: u.avatar_blocked ? null : (u.avatar_url || null),
+        cardBack: u.card_back_blocked ? null : (u.card_back_url || null),
+        isAdmin: !!process.env.ADMIN_USERNAME && u.username === process.env.ADMIN_USERNAME,
       });
     } catch {
       res.json({ username: req.session.username });

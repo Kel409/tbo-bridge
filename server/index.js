@@ -7,6 +7,8 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
 
 import {
   newGame, makeBid, makePass, makeDouble, makeRedouble, playCard, pickAutoCard,
@@ -25,12 +27,125 @@ app.get('/healthz', (req, res) => res.send('ok'));
 app.use(express.json());
 registerAuthRoutes(app);
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// ---- Avatars (Cloudinary) ----
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+// In-memory upload, capped at 2 MB, images only. Cloudinary re-encodes/resizes to a 256x256 square.
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+function uploadToCloudinary(buffer, publicId, transformation) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'bridge', public_id: publicId, overwrite: true, format: 'png', transformation: [transformation] },
+      (err, result) => (err ? reject(err) : resolve(result.secure_url)),
+    );
+    stream.end(buffer);
+  });
+}
+
+app.post('/api/avatar', avatarUpload.single('avatar'), async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Log in first.' });
+  if (!req.file) return res.status(400).json({ error: 'Choose an image.' });
+  try {
+    const chk = await query('SELECT username, avatar_blocked FROM users WHERE id = $1', [req.session.userId]);
+    if (chk.rows[0] && chk.rows[0].avatar_blocked) return res.status(403).json({ error: 'Your image is blocked.' });
+    const url = await uploadToCloudinary(req.file.buffer, 'avatar_' + req.session.userId, { width: 256, height: 256, crop: 'fill', gravity: 'face' });
+    await query('UPDATE users SET avatar_url = $1 WHERE id = $2', [url, req.session.userId]);
+    refreshImagesForUsername(chk.rows[0] && chk.rows[0].username);
+    res.json({ avatar: url });
+  } catch (e) {
+    console.error('avatar upload failed:', e.message);
+    res.status(500).json({ error: 'Upload failed.' });
+  }
+});
+
+app.post('/api/cardback', avatarUpload.single('image'), async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Log in first.' });
+  if (!req.file) return res.status(400).json({ error: 'Choose an image.' });
+  try {
+    const chk = await query('SELECT username, card_back_blocked FROM users WHERE id = $1', [req.session.userId]);
+    if (chk.rows[0] && chk.rows[0].card_back_blocked) return res.status(403).json({ error: 'Your image is blocked.' });
+    const url = await uploadToCloudinary(req.file.buffer, 'cardback_' + req.session.userId, { width: 240, height: 336, crop: 'fill' }); // card aspect
+    await query('UPDATE users SET card_back_url = $1 WHERE id = $2', [url, req.session.userId]);
+    refreshImagesForUsername(chk.rows[0] && chk.rows[0].username);
+    res.json({ cardBack: url });
+  } catch (e) {
+    console.error('card back upload failed:', e.message);
+    res.status(500).json({ error: 'Upload failed.' });
+  }
+});
+
+// Clear this user's custom images (avatar and card back).
+app.post('/api/clear-images', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Log in first.' });
+  try {
+    await query('UPDATE users SET avatar_url = NULL, card_back_url = NULL WHERE id = $1', [req.session.userId]);
+    refreshImagesForUsername(req.session.username);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed.' });
+  }
+});
+
+// Admin (ADMIN_USERNAME) blocks/unblocks a user's images (both avatar and card back).
+function isAdmin(req) {
+  return !!process.env.ADMIN_USERNAME && req.session && req.session.username === process.env.ADMIN_USERNAME;
+}
+app.post('/api/admin/block', async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Not allowed.' });
+  const { username, blocked } = req.body || {};
+  if (typeof username !== 'string') return res.status(400).json({ error: 'Username required.' });
+  try {
+    await query('UPDATE users SET avatar_blocked = $1, card_back_blocked = $1 WHERE username = $2', [blocked !== false, username]);
+    refreshImagesForUsername(username);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed.' });
+  }
+});
+
+// Re-read a user's effective images and push them to their connected sockets in every room.
+async function refreshImagesForUsername(username) {
+  if (!username) return;
+  let r;
+  try { r = await query('SELECT avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE username = $1', [username]); }
+  catch { return; }
+  const u = r.rows[0] || {};
+  const av = (u.avatar_url && !u.avatar_blocked) ? u.avatar_url : null;
+  const cb = (u.card_back_url && !u.card_back_blocked) ? u.card_back_url : null;
+  for (const room of Object.values(rooms)) {
+    let changed = false;
+    for (const s of room.sockets) {
+      if (s.data.username === username) {
+        s.data.avatar = av; s.data.cardBack = cb;
+        room.avatars.set(s.data.clientId, av); room.cardBacks.set(s.data.clientId, cb);
+        changed = true;
+      }
+    }
+    if (changed) emitStates(room);
+  }
+}
+
+// Turn oversized/invalid uploads into a clean JSON error.
+app.use((err, req, res, next) => {
+  if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Image too large (max 2 MB).' });
+  if (err) return res.status(400).json({ error: 'Upload error.' });
+  next();
+});
+
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 io.engine.use(sessionMiddleware);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 30;
+const TURN_SECONDS = 120;
 const GRACE_SECONDS = 25;
 
 // ---- Rooms ----
@@ -54,7 +169,9 @@ function makeRoom(mode) {
     reveal: new Set(),
     lockedThisDeal: new Set(),
     originalHands: null,
-    names: new Map(),
+    names: new Map(),         // clientId -> display username
+    avatars: new Map(),       // clientId -> effective avatar url (null if none/blocked)
+    cardBacks: new Map(),     // clientId -> effective card-back url (null if none/blocked)
   };
 }
 const rooms = { normal: makeRoom('normal'), ranked: makeRoom('ranked') };
@@ -86,10 +203,14 @@ function viewFor(room, seat, cid) {
   }
   const seatStatus = {};
   const seatNames = {};
+  const seatAvatars = {};
+  const seatCardBacks = {};
   for (const s of SEATS) {
     const v = room.seats[s];
     seatStatus[s] = v == null ? 'empty' : (v === 'bot' ? 'bot' : (v === seat ? 'you' : 'taken'));
     seatNames[s] = (v && v !== 'bot') ? (room.names.get(v) || 'Player') : null;
+    seatAvatars[s] = (v && v !== 'bot') ? (room.avatars.get(v) || null) : null;
+    seatCardBacks[s] = (v && v !== 'bot') ? (room.cardBacks.get(v) || null) : null;
   }
   return {
     game: { ...g, hands },
@@ -98,6 +219,8 @@ function viewFor(room, seat, cid) {
     log: room.log,
     seats: seatStatus,
     seatNames,
+    seatAvatars,
+    seatCardBacks,
     you: seat,
     mode: room.mode,
     turnEndsAt: room.turnEndsAt,
@@ -322,6 +445,19 @@ io.on('connection', (socket) => {
       socket.data.loggedIn = true;
       socket.data.username = sess.username;
       room.names.set(socket.data.clientId, sess.username);
+      // Load this user's effective avatar and card back, then refresh so seats show them.
+      query('SELECT avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE id = $1', [sess.userId])
+        .then((r) => {
+          const u = r.rows[0] || {};
+          const av = (u.avatar_url && !u.avatar_blocked) ? u.avatar_url : null;
+          const cb = (u.card_back_url && !u.card_back_blocked) ? u.card_back_url : null;
+          socket.data.avatar = av;
+          socket.data.cardBack = cb;
+          room.avatars.set(socket.data.clientId, av);
+          room.cardBacks.set(socket.data.clientId, cb);
+          emitStates(room);
+        })
+        .catch(() => {});
     } else if (typeof guestId === 'string') {
       socket.data.clientId = 'g:' + guestId;
       socket.data.loggedIn = false;

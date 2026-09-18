@@ -37,6 +37,10 @@ export async function initSchema() {
       deals_lost    INTEGER NOT NULL DEFAULT 0,
       rubbers_won   INTEGER NOT NULL DEFAULT 0,
       rubbers_lost  INTEGER NOT NULL DEFAULT 0,
+      avatar_url    TEXT,
+      avatar_blocked BOOLEAN NOT NULL DEFAULT false,
+      card_back_url TEXT,
+      card_back_blocked BOOLEAN NOT NULL DEFAULT false,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS points        INTEGER NOT NULL DEFAULT 0;
@@ -44,6 +48,10 @@ export async function initSchema() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS deals_lost    INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_won   INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_lost  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url    TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_blocked BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS card_back_url TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS card_back_blocked BOOLEAN NOT NULL DEFAULT false;
 
     CREATE TABLE IF NOT EXISTS matches (
       id         SERIAL PRIMARY KEY,

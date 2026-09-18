@@ -44,6 +44,7 @@ function draw() {
     mySeat: state.you,
     seats: state.seats,
     seatNames: state.seatNames,
+    seatAvatars: state.seatAvatars,
     spectating: state.spectating,
     revealAll: state.revealAll,
     locked: state.locked,
@@ -173,23 +174,6 @@ document.getElementById('sb-next').addEventListener('click', () => { scoreboardO
 function openAuth() { const o = document.getElementById('auth-overlay'); if (o) o.hidden = false; }
 function closeAuth() { const o = document.getElementById('auth-overlay'); if (o) o.hidden = true; }
 
-function renderAuthBar() {
-  const el = document.getElementById('auth-bar');
-  if (!el || !state) return;
-  if (state.loggedIn) {
-    const wl = myStats && myStats.username != null ? ` \u00b7 ${myStats.points} pts \u00b7 ${myStats.rubbersWon}-${myStats.rubbersLost}` : '';
-    el.innerHTML = `${state.username}${wl} <button id="auth-logout">Logout</button>`;
-  } else {
-    el.innerHTML = '<button id="auth-open">Log in</button>';
-  }
-}
-
-let myStats = null;
-async function refreshMe() {
-  try { myStats = await (await fetch('/api/me')).json(); renderAuthBar(); } catch { /* ignore */ }
-}
-refreshMe(); // load the current user's record on start
-
 async function submitAuth(kind) {
   const username = document.getElementById('auth-username').value.trim();
   const password = document.getElementById('auth-password').value;
@@ -197,8 +181,7 @@ async function submitAuth(kind) {
   errEl.textContent = '';
   try {
     const res = await fetch('/api/' + kind, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     });
     const data = await res.json().catch(() => ({}));
@@ -214,36 +197,96 @@ async function logout() {
   location.reload();
 }
 
-// Delegated clicks for the auth bar (its buttons are re-rendered each state).
-document.getElementById('auth-bar').addEventListener('click', (e) => {
-  if (e.target.id === 'auth-open') openAuth();
-  else if (e.target.id === 'auth-logout') logout();
-});
 document.getElementById('auth-login').addEventListener('click', () => submitAuth('login'));
 document.getElementById('auth-signup').addEventListener('click', () => submitAuth('signup'));
 document.getElementById('auth-close').addEventListener('click', closeAuth);
 document.getElementById('auth-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAuth('login'); });
 
-// ---- Match history popup ----
-const SUIT_SYM = { S: '\u2660', H: '\u2665', D: '\u2666', C: '\u2663' };
-
-function openHistory() {
-  const o = document.getElementById('history-overlay');
-  if (o) o.hidden = false;
-  loadHistory();
-}
-function closeHistory() { const o = document.getElementById('history-overlay'); if (o) o.hidden = true; }
-
-async function loadHistory() {
-  const statsEl = document.getElementById('history-stats');
-  const contentEl = document.getElementById('history-content');
-  if (!(state && state.loggedIn)) { statsEl.innerHTML = ''; contentEl.innerHTML = '<p class="sb-empty">Log in to see your match history.</p>'; return; }
-  // Lifetime summary from /api/me (already fetched into myStats), then the match list.
-  if (myStats && myStats.username != null) {
-    const cls = myStats.points >= 0 ? 'pos' : 'neg';
-    statsEl.innerHTML = `Lifetime: <span class="${cls}">${myStats.points} pts</span> \u00b7 `
-      + `rubbers ${myStats.rubbersWon}-${myStats.rubbersLost} \u00b7 deals ${myStats.dealsWon}-${myStats.dealsLost}`;
+function renderAuthBar() {
+  const el = document.getElementById('auth-bar');
+  const avEl = document.getElementById('account-avatar');
+  if (!el || !state) return;
+  if (state.loggedIn) {
+    const mod = myStats && myStats.isAdmin ? ' <button id="auth-mod">Moderate</button>' : '';
+    el.innerHTML = `${state.username} <button id="profile-open">Profile</button>${mod}`;
+    if (avEl) avEl.src = (myStats && myStats.avatar) || '/img/default-avatar.png';
+  } else {
+    el.innerHTML = '<button id="auth-open">Log in</button>';
+    if (avEl) avEl.src = '/img/default-avatar.png';
   }
+}
+
+let myStats = null;
+async function refreshMe() {
+  try { myStats = await (await fetch('/api/me')).json(); renderAuthBar(); renderProfile(); } catch { /* ignore */ }
+}
+refreshMe();
+
+// Clicking the top-right avatar opens the profile (or login prompt).
+document.getElementById('account-avatar').addEventListener('click', () => {
+  if (state && state.loggedIn) openProfile(); else openAuth();
+});
+
+// Auth bar delegated clicks: Profile, Moderate (admin), Login.
+document.getElementById('auth-bar').addEventListener('click', async (e) => {
+  if (e.target.id === 'profile-open') openProfile();
+  else if (e.target.id === 'auth-open') openAuth();
+  else if (e.target.id === 'auth-mod') {
+    const username = prompt('Moderate which username?');
+    if (!username) return;
+    const blocked = confirm(`OK = BLOCK ${username}'s images.  Cancel = UNBLOCK.`);
+    try {
+      await fetch('/api/admin/block', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, blocked }) });
+    } catch { /* ignore */ }
+  }
+});
+
+// ---- Profile popup: avatar + card back uploads, stats, match history, clear images, logout ----
+function openProfile() { const o = document.getElementById('profile-overlay'); if (o) { o.hidden = false; renderProfile(); loadHistory(); } }
+function closeProfile() { const o = document.getElementById('profile-overlay'); if (o) o.hidden = true; }
+
+function renderProfile() {
+  if (!(state && state.loggedIn) || !myStats) return;
+  document.getElementById('profile-name').textContent = myStats.username || 'Profile';
+  document.getElementById('profile-avatar').src = myStats.avatar || '/img/default-avatar.png';
+  const cardEl = document.getElementById('profile-cardback');
+  if (cardEl) {
+    if (myStats.cardBack) { cardEl.style.backgroundImage = `url("${myStats.cardBack}")`; cardEl.textContent = ''; }
+    else { cardEl.style.backgroundImage = ''; cardEl.textContent = 'Card back'; }
+  }
+  const p = myStats.points >= 0 ? 'pos' : 'neg';
+  document.getElementById('profile-stats').innerHTML =
+    `<span class="${p}">${myStats.points} pts</span> \u00b7 rubbers ${myStats.rubbersWon}-${myStats.rubbersLost} \u00b7 deals ${myStats.dealsWon}-${myStats.dealsLost}`;
+}
+
+async function uploadImage(endpoint, field, file) {
+  const form = new FormData();
+  form.append(field, file);
+  try {
+    const res = await fetch(endpoint, { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Upload failed.'); return; }
+    await refreshMe();
+    socket.emit('hello', clientId); // re-sync so seats show the new image
+  } catch { alert('Upload failed.'); }
+}
+
+document.getElementById('profile-avatar').addEventListener('click', () => document.getElementById('avatar-input').click());
+document.getElementById('profile-cardback').addEventListener('click', () => document.getElementById('cardback-input').click());
+document.getElementById('avatar-input').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) uploadImage('/api/avatar', 'avatar', f); });
+document.getElementById('cardback-input').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) uploadImage('/api/cardback', 'image', f); });
+document.getElementById('profile-clear').addEventListener('click', async () => {
+  if (!confirm('Remove your photo and card back?')) return;
+  try { await fetch('/api/clear-images', { method: 'POST' }); await refreshMe(); socket.emit('hello', clientId); } catch { /* ignore */ }
+});
+document.getElementById('profile-logout').addEventListener('click', logout);
+document.getElementById('profile-close').addEventListener('click', closeProfile);
+
+// ---- Match history (rendered inside the Profile popup) ----
+async function loadHistory() {
+  const contentEl = document.getElementById('profile-history');
+  if (!contentEl) return;
+  if (!(state && state.loggedIn)) { contentEl.innerHTML = '<p class="sb-empty">Log in to see your match history.</p>'; return; }
   contentEl.innerHTML = 'Loading\u2026';
   try {
     const data = await (await fetch('/api/history')).json();
@@ -280,9 +323,6 @@ function matchHTML(m) {
     </table>
   </div>`;
 }
-
-document.getElementById('history-toggle').addEventListener('click', openHistory);
-document.getElementById('history-close').addEventListener('click', closeHistory);
 
 // ---- Colour scheme (client-side, persisted). Three primaries; the theme shades the rest. ----
 const COLOR_DEFAULTS = { bg: '#111214', text: '#eaeaea', accent: '#C5283D' };

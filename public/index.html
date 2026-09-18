@@ -10,7 +10,10 @@
   <header id="topbar">
     <h1 id="title">Bridge</h1>
     <a id="mode-link" href="#"></a>
-    <span id="auth-bar"></span>
+    <div id="account">
+      <img id="account-avatar" alt="" src="/img/default-avatar.png">
+      <span id="auth-bar"></span>
+    </div>
     <p id="status"></p>
     <span id="clock"></span>
     <div id="auction"></div>
@@ -59,7 +62,6 @@
   <!-- Scoreboard: the side tab toggles it during play; it also pops up after each deal. -->
   <button id="sb-toggle" aria-label="Toggle scoreboard">Scoreboard</button>
   <button id="bids-toggle" aria-label="Toggle bid history">Bids</button>
-  <button id="history-toggle" aria-label="Toggle match history">History</button>
   <button id="colors-toggle" aria-label="Toggle colours">Colours</button>
   <div id="colors-overlay" hidden>
     <div id="colors-panel" role="dialog" aria-modal="true" aria-label="Colour scheme">
@@ -72,14 +74,6 @@
         <button id="colors-reset">Reset to default</button>
         <button id="colors-close">Close</button>
       </div>
-    </div>
-  </div>
-  <div id="history-overlay" hidden>
-    <div id="history-panel" role="dialog" aria-modal="true" aria-label="Match history">
-      <h2>Match history</h2>
-      <div id="history-stats"></div>
-      <div id="history-content"></div>
-      <button id="history-close">Close</button>
     </div>
   </div>
   <div id="bids-overlay" hidden>
@@ -109,6 +103,32 @@
         <button id="auth-signup">Sign up</button>
         <button id="auth-close">Just watch</button>
       </div>
+    </div>
+  </div>
+
+  <div id="profile-overlay" hidden>
+    <div id="profile-panel" role="dialog" aria-modal="true" aria-label="Profile">
+      <h2 id="profile-name">Profile</h2>
+      <div class="profile-images">
+        <div class="profile-slot">
+          <img id="profile-avatar" class="pfp-circle" alt="" src="/img/default-avatar.png">
+          <span>Photo</span>
+        </div>
+        <div class="profile-slot">
+          <div id="profile-cardback" class="pfp-card">Card back</div>
+          <span>Card back</span>
+        </div>
+      </div>
+      <div id="profile-stats"></div>
+      <h3 class="profile-h3">Match history</h3>
+      <div id="profile-history"></div>
+      <div class="profile-actions">
+        <button id="profile-clear">Clear images</button>
+        <button id="profile-logout">Log out</button>
+      </div>
+      <button id="profile-close">Close</button>
+      <input id="avatar-input" type="file" accept="image/*" hidden>
+      <input id="cardback-input" type="file" accept="image/*" hidden>
     </div>
   </div>
 

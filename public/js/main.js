@@ -257,7 +257,8 @@ function renderProfile() {
   }
   const p = myStats.points >= 0 ? 'pos' : 'neg';
   document.getElementById('profile-stats').innerHTML =
-    `<span class="${p}">${myStats.points} pts</span> \u00b7 rubbers ${myStats.rubbersWon}-${myStats.rubbersLost} \u00b7 deals ${myStats.dealsWon}-${myStats.dealsLost}`;
+    `<span class="${p}">${myStats.points} pts</span> \u00b7 rubbers ${myStats.rubbersWon}-${myStats.rubbersLost}<br>`
+    + `contracts ${myStats.contractsMade}-${myStats.contractsLost} \u00b7 defenses ${myStats.defensesWon}-${myStats.defensesLost}`;
 }
 
 async function uploadImage(endpoint, field, file) {

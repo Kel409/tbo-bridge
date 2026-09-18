@@ -145,7 +145,7 @@ const io = new Server(httpServer);
 io.engine.use(sessionMiddleware);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 120;
+const TURN_SECONDS = 30;
 const GRACE_SECONDS = 25;
 
 // ---- Rooms ----
@@ -159,7 +159,7 @@ function makeRoom(mode) {
     rounds: [],
     recorded: new Set(),
     rubberRecorded: false,    // ranked stats recorded for the current rubber?
-    dealTally: { NS: { won: 0, lost: 0 }, EW: { won: 0, lost: 0 } }, // deals won/lost this rubber
+    dealTally: { NS: { cm: 0, cl: 0, dw: 0, dl: 0 }, EW: { cm: 0, cl: 0, dw: 0, dl: 0 } }, // per side this rubber
     dealGameWon: null,
     seats: { N: null, E: null, S: null, W: null },
     timer: null,
@@ -257,12 +257,11 @@ function scoreDeal(room) {
   const rows = scoreHand(g.contract, g.tricksWon[declSide], g.vul[declSide], g.round);
   addEvents(room.log, rows);
 
-  // Deal result: declarer wins the deal by making the contract, defenders by setting it.
+  // Per-deal result: split into the declaring side's contract result and the defenders' defense result.
   const made = g.tricksWon[declSide] >= g.contract.level + 6;
-  const dealWinner = made ? declSide : (declSide === 'NS' ? 'EW' : 'NS');
-  const dealLoser = dealWinner === 'NS' ? 'EW' : 'NS';
-  room.dealTally[dealWinner].won += 1;
-  room.dealTally[dealLoser].lost += 1;
+  const defSide = declSide === 'NS' ? 'EW' : 'NS';
+  if (made) { room.dealTally[declSide].cm += 1; room.dealTally[defSide].dl += 1; }
+  else { room.dealTally[declSide].cl += 1; room.dealTally[defSide].dw += 1; }
 
   const trickPoints = rows.filter((r) => r.countsTowardGame && r.team === declSide).reduce((s, r) => s + r.points, 0);
   const outcome = applyTrickPoints(room.rubber, declSide, trickPoints);
@@ -303,12 +302,14 @@ async function settleRubber(room) {
     const info = seats[seat];
     if (!info) continue;
     const side = PARTNERSHIPS[seat];
+    const t = room.dealTally[side];
     const rw = side === winner ? 1 : 0;
     try {
       await query(
-        `UPDATE users SET points = points + $1, deals_won = deals_won + $2, deals_lost = deals_lost + $3,
-                          rubbers_won = rubbers_won + $4, rubbers_lost = rubbers_lost + $5 WHERE id = $6`,
-        [delta[side], room.dealTally[side].won, room.dealTally[side].lost, rw, 1 - rw, info.userId],
+        `UPDATE users SET points = points + $1, contracts_made = contracts_made + $2, contracts_lost = contracts_lost + $3,
+                          defenses_won = defenses_won + $4, defenses_lost = defenses_lost + $5,
+                          rubbers_won = rubbers_won + $6, rubbers_lost = rubbers_lost + $7 WHERE id = $8`,
+        [delta[side], t.cm, t.cl, t.dw, t.dl, rw, 1 - rw, info.userId],
       );
     } catch (e) { console.error('rubber stat update failed:', e.message); }
   }
@@ -421,7 +422,7 @@ function startNewRubber(room) {
   room.rounds = [];
   room.recorded.clear();
   room.rubberRecorded = false;
-  room.dealTally = { NS: { won: 0, lost: 0 }, EW: { won: 0, lost: 0 } };
+  room.dealTally = { NS: { cm: 0, cl: 0, dw: 0, dl: 0 }, EW: { cm: 0, cl: 0, dw: 0, dl: 0 } };
 }
 function onNewDeal(room) {
   const g = room.game;

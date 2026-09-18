@@ -74,7 +74,7 @@ export function registerAuthRoutes(app) {
     if (!req.session.userId) return res.json({ username: null });
     try {
       const r = await query(
-        'SELECT username, points, deals_won, deals_lost, rubbers_won, rubbers_lost, avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE id = $1',
+        'SELECT username, points, contracts_made, contracts_lost, defenses_won, defenses_lost, rubbers_won, rubbers_lost, avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE id = $1',
         [req.session.userId],
       );
       const u = r.rows[0];
@@ -82,7 +82,8 @@ export function registerAuthRoutes(app) {
       res.json({
         username: u.username,
         points: u.points,
-        dealsWon: u.deals_won, dealsLost: u.deals_lost,
+        contractsMade: u.contracts_made, contractsLost: u.contracts_lost,
+        defensesWon: u.defenses_won, defensesLost: u.defenses_lost,
         rubbersWon: u.rubbers_won, rubbersLost: u.rubbers_lost,
         avatar: u.avatar_blocked ? null : (u.avatar_url || null),
         cardBack: u.card_back_blocked ? null : (u.card_back_url || null),

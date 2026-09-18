@@ -33,8 +33,10 @@ export async function initSchema() {
       username      TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       points        INTEGER NOT NULL DEFAULT 0,   -- lifetime net points (zero-sum across all accounts)
-      deals_won     INTEGER NOT NULL DEFAULT 0,
-      deals_lost    INTEGER NOT NULL DEFAULT 0,
+      contracts_made INTEGER NOT NULL DEFAULT 0,
+      contracts_lost INTEGER NOT NULL DEFAULT 0,
+      defenses_won   INTEGER NOT NULL DEFAULT 0,
+      defenses_lost  INTEGER NOT NULL DEFAULT 0,
       rubbers_won   INTEGER NOT NULL DEFAULT 0,
       rubbers_lost  INTEGER NOT NULL DEFAULT 0,
       avatar_url    TEXT,
@@ -44,8 +46,10 @@ export async function initSchema() {
       created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS points        INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS deals_won     INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS deals_lost    INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS contracts_made INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS contracts_lost INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS defenses_won   INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS defenses_lost  INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_won   INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_lost  INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url    TEXT;

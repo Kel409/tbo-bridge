@@ -45,6 +45,7 @@ function draw() {
     seats: state.seats,
     seatNames: state.seatNames,
     seatAvatars: state.seatAvatars,
+    seatCardBacks: state.seatCardBacks,
     spectating: state.spectating,
     revealAll: state.revealAll,
     locked: state.locked,

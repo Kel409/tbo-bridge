@@ -283,3 +283,43 @@ function matchHTML(m) {
 
 document.getElementById('history-toggle').addEventListener('click', openHistory);
 document.getElementById('history-close').addEventListener('click', closeHistory);
+
+// ---- Colour scheme (client-side, persisted). Three primaries; the theme shades the rest. ----
+const COLOR_DEFAULTS = { bg: '#111214', text: '#eaeaea', accent: '#C5283D' };
+const COLOR_VARS = { bg: '--color-bg', text: '--color-text', accent: '--color-accent' };
+
+function applyColors(c) {
+  for (const k of Object.keys(COLOR_VARS)) {
+    if (c && c[k]) document.documentElement.style.setProperty(COLOR_VARS[k], c[k]);
+    else document.documentElement.style.removeProperty(COLOR_VARS[k]); // fall back to the CSS default
+  }
+}
+function syncColorInputs(c) {
+  document.getElementById('color-bg').value = c.bg;
+  document.getElementById('color-text').value = c.text;
+  document.getElementById('color-accent').value = c.accent;
+}
+
+let colorScheme;
+try { colorScheme = JSON.parse(localStorage.getItem('colorScheme')) || { ...COLOR_DEFAULTS }; }
+catch { colorScheme = { ...COLOR_DEFAULTS }; }
+applyColors(colorScheme);
+syncColorInputs(colorScheme);
+
+function onColorChange(key, value) {
+  colorScheme[key] = value;
+  applyColors(colorScheme);
+  localStorage.setItem('colorScheme', JSON.stringify(colorScheme));
+}
+document.getElementById('color-bg').addEventListener('input', (e) => onColorChange('bg', e.target.value));
+document.getElementById('color-text').addEventListener('input', (e) => onColorChange('text', e.target.value));
+document.getElementById('color-accent').addEventListener('input', (e) => onColorChange('accent', e.target.value));
+
+document.getElementById('colors-reset').addEventListener('click', () => {
+  colorScheme = { ...COLOR_DEFAULTS };
+  localStorage.removeItem('colorScheme');
+  applyColors(null);            // remove overrides -> the CSS :root defaults take over
+  syncColorInputs(colorScheme);
+});
+document.getElementById('colors-toggle').addEventListener('click', () => { document.getElementById('colors-overlay').hidden = false; });
+document.getElementById('colors-close').addEventListener('click', () => { document.getElementById('colors-overlay').hidden = true; });

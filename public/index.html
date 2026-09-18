@@ -60,6 +60,20 @@
   <button id="sb-toggle" aria-label="Toggle scoreboard">Scoreboard</button>
   <button id="bids-toggle" aria-label="Toggle bid history">Bids</button>
   <button id="history-toggle" aria-label="Toggle match history">History</button>
+  <button id="colors-toggle" aria-label="Toggle colours">Colours</button>
+  <div id="colors-overlay" hidden>
+    <div id="colors-panel" role="dialog" aria-modal="true" aria-label="Colour scheme">
+      <h2>Colours</h2>
+      <p class="auth-hint">Pick three colours; the rest of the theme is shaded from them.</p>
+      <label class="color-row">Background <input id="color-bg" type="color"></label>
+      <label class="color-row">Text <input id="color-text" type="color"></label>
+      <label class="color-row">Accent <input id="color-accent" type="color"></label>
+      <div class="auth-actions">
+        <button id="colors-reset">Reset to default</button>
+        <button id="colors-close">Close</button>
+      </div>
+    </div>
+  </div>
   <div id="history-overlay" hidden>
     <div id="history-panel" role="dialog" aria-modal="true" aria-label="Match history">
       <h2>Match history</h2>

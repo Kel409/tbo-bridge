@@ -2,13 +2,23 @@
    red for hearts/diamonds, white for spades/clubs. Selectable cards read brighter than the rest. */
 
 :root {
+  /* Three user-editable primaries (the Colors popup sets these). */
   --color-bg: #111214;
-  --color-surface: #1b1d20;
   --color-text: #eaeaea;
-  --color-muted: #a0a0a0;
   --color-accent: #C5283D;
-  --color-border: #2a2d31;
-  --color-accent-text: #DC566A;
+
+  /* The rest are derived from the three above, so they rescale automatically when a primary changes. */
+  --color-surface: color-mix(in srgb, var(--color-bg), white 5%);       /* panels/cards base, just above bg */
+  --color-border: color-mix(in srgb, var(--color-bg), white 11%);       /* lines, a bit lighter still */
+  --color-muted: color-mix(in srgb, var(--color-text), var(--color-bg) 35%); /* dimmed text */
+  --color-accent-text: color-mix(in srgb, var(--color-accent), white 25%);   /* lighter accent for text/highlights */
+
+  /* Felt and card faces, also shaded from the background so the whole surface follows the theme. */
+  --felt-center: color-mix(in srgb, var(--color-bg), black 10%);   /* lit middle of the table */
+  --felt-edge:   color-mix(in srgb, var(--color-bg), black 55%);   /* darker rail */
+  --card-face:       color-mix(in srgb, var(--color-bg), white 9%);  /* solid, clearly above the felt */
+  --card-face-lit:   color-mix(in srgb, var(--color-bg), white 18%); /* a playable card */
+  --card-face-hover: color-mix(in srgb, var(--color-bg), white 26%); /* the card under the cursor */
 
   --suit-red: var(--color-accent-text); /* hearts, diamonds */
   --suit-white: var(--color-text);      /* spades, clubs */
@@ -100,7 +110,7 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   padding: 0.5rem 2.5rem;
   overflow: hidden; /* never let a tall side hand push the layout around */
   /* Felt darker than the cards so the opaque surface-toned cards clearly stand out. */
-  background: radial-gradient(130% 100% at 50% 50%, #0f1012 0%, #070809 75%);
+  background: radial-gradient(130% 100% at 50% 50%, var(--felt-center) 0%, var(--felt-edge) 75%);
 }
 
 .seat { display: flex; align-items: center; justify-content: center; gap: 0.35rem; min-width: 0; position: relative; z-index: 1; }
@@ -136,7 +146,7 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   width: var(--card-w);
   height: var(--card-h);
   border-radius: var(--radius);
-  background: #23262b; /* solid, clearly lighter than the felt so cards never blend */
+  background: var(--card-face); /* shaded from the theme background, clearly above the felt */
   border: 2px solid var(--color-border);
   padding: 0;
   position: relative;
@@ -179,10 +189,10 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 
 /* Playable cards jump out with a distinctly lighter fill, a brighter outline, and a strong suit-colored glow.
    Non-playable cards keep their solid base tone, so nothing dims toward the felt and overlaps stay clean. */
-.hand .card:not(:disabled) { background: #3b424c; cursor: pointer; }
+.hand .card:not(:disabled) { background: var(--card-face-lit); cursor: pointer; }
 .hand .card.face.red:not(:disabled)   { border-color: #ff6b7e; box-shadow: 0 0 12px 2px rgba(220, 86, 106, 0.75), 0 2px 8px rgba(0,0,0,0.6); }
 .hand .card.face.black:not(:disabled) { border-color: #ffffff; box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.55), 0 2px 8px rgba(0,0,0,0.6); }
-.hand .card:not(:disabled):hover { z-index: 20; background: #49515d; }
+.hand .card:not(:disabled):hover { z-index: 20; background: var(--card-face-hover); }
 
 /* ---- Center trick, one card per seat around a cross ---- */
 .trick {
@@ -409,3 +419,24 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 .match-head { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem; }
 .match-head .win { color: var(--suit-white); font-weight: 700; }
 .match-date { color: var(--color-muted); font-size: 0.78rem; }
+
+/* ---- Colour scheme popup ---- */
+#colors-toggle {
+  position: fixed; right: 0; top: calc(50% + 270px); transform: translateY(-50%);
+  writing-mode: vertical-rl; padding: 0.7rem 0.4rem;
+  border-radius: 6px 0 0 6px; border-color: var(--color-accent); letter-spacing: 0.06em; z-index: 50;
+}
+#colors-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6);
+}
+#colors-overlay[hidden] { display: none; }
+#colors-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.4rem 1.5rem; width: 300px; max-width: 92vw; box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+  display: flex; flex-direction: column; gap: 0.7rem;
+}
+#colors-panel h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 600; color: var(--color-accent-text); }
+.color-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; color: var(--color-text); }
+.color-row input[type="color"] { width: 48px; height: 28px; border: 1px solid var(--color-border); border-radius: 5px; background: none; cursor: pointer; }
+#colors-reset { border-color: var(--color-accent); }

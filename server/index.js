@@ -145,7 +145,7 @@ const io = new Server(httpServer);
 io.engine.use(sessionMiddleware);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 30;
+const TURN_SECONDS = 120;
 const GRACE_SECONDS = 25;
 
 // ---- Rooms ----

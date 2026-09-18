@@ -365,3 +365,34 @@ document.getElementById('colors-reset').addEventListener('click', () => {
 });
 document.getElementById('colors-toggle').addEventListener('click', () => { document.getElementById('colors-overlay').hidden = false; });
 document.getElementById('colors-close').addEventListener('click', () => { document.getElementById('colors-overlay').hidden = true; });
+
+// ---- View another player's stats by clicking their seat avatar ----
+async function showPlayer(username) {
+  const overlay = document.getElementById('player-overlay');
+  const statsEl = document.getElementById('player-stats');
+  document.getElementById('player-name').textContent = username;
+  document.getElementById('player-avatar').src = '/img/default-avatar.png';
+  statsEl.textContent = 'Loading\u2026';
+  overlay.hidden = false;
+  try {
+    const res = await fetch('/api/user/' + encodeURIComponent(username));
+    const u = await res.json();
+    if (!res.ok) { statsEl.textContent = u.error || 'Could not load.'; return; }
+    document.getElementById('player-avatar').src = u.avatar || '/img/default-avatar.png';
+    const cls = u.points >= 0 ? 'pos' : 'neg';
+    statsEl.innerHTML =
+      `<span class="${cls}">${u.points} pts</span><br>`
+      + `rubbers ${u.rubbersWon}-${u.rubbersLost}<br>`
+      + `contracts ${u.contractsMade}-${u.contractsLost}<br>`
+      + `defenses ${u.defensesWon}-${u.defensesLost}`;
+  } catch {
+    statsEl.textContent = 'Could not load.';
+  }
+}
+
+// Delegated: clicking any seat avatar opens that player's stats.
+document.getElementById('table').addEventListener('click', (e) => {
+  const av = e.target.closest('.seat-av');
+  if (av && av.dataset.user) showPlayer(av.dataset.user);
+});
+document.getElementById('player-close').addEventListener('click', () => { document.getElementById('player-overlay').hidden = true; });

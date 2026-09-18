@@ -464,3 +464,20 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 .match-head { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.4rem; gap: 0.5rem; }
 .match-head .win { color: var(--suit-white); font-weight: 700; }
 .match-date { color: var(--color-muted); font-size: 0.78rem; margin-bottom: 0.4rem; }
+
+/* ---- Player stats popup (from clicking a seat avatar) ---- */
+#player-overlay { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); }
+#player-overlay[hidden] { display: none; }
+#player-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.3rem 1.5rem; width: 280px; max-width: 92vw; box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+  display: flex; flex-direction: column; align-items: center; gap: 0.7rem; text-align: center;
+}
+#player-panel h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; color: var(--color-accent-text); }
+#player-stats { font-size: 0.9rem; color: var(--color-text); line-height: 1.6; }
+#player-close { border-color: var(--color-accent); }
+.seat-av { cursor: pointer; }
+
+/* Point-total sign colours (used in profile and player-stats popups). */
+.pos { color: var(--suit-white); }
+.neg { color: var(--color-accent-text); }

@@ -132,6 +132,15 @@
     </div>
   </div>
 
+  <div id="player-overlay" hidden>
+    <div id="player-panel" role="dialog" aria-modal="true" aria-label="Player stats">
+      <img id="player-avatar" class="pfp-circle" alt="" src="/img/default-avatar.png">
+      <h2 id="player-name">Player</h2>
+      <div id="player-stats"></div>
+      <button id="player-close">Close</button>
+    </div>
+  </div>
+
   <!-- Socket.IO client, served automatically by the server -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- type="module" enables import/export. Modules only load over http, not file://, which is why you must run a server. -->

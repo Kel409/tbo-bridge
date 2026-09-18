@@ -209,7 +209,7 @@ function renderSeatLabels(game) {
     const av = SEAT_AVATARS ? SEAT_AVATARS[seat] : null;
     // Small avatar for a seated human (falls back to the default image on error or when absent).
     const img = who
-      ? `<img class="seat-av" src="${av || DEFAULT_AVATAR}" alt="" onerror="this.onerror=null;this.src='${DEFAULT_AVATAR}'">`
+      ? `<img class="seat-av" data-user="${who}" src="${av || DEFAULT_AVATAR}" alt="" title="View ${who}'s stats" onerror="this.onerror=null;this.src='${DEFAULT_AVATAR}'">`
       : '';
     head.innerHTML = img + label;
   }

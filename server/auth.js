@@ -94,7 +94,29 @@ export function registerAuthRoutes(app) {
     }
   });
 
-  // My ranked match history (most recent first).
+  // Public stats for any user (read-only; no private fields). Used when clicking a player's icon.
+  app.get('/api/user/:username', async (req, res) => {
+    try {
+      const r = await query(
+        `SELECT username, points, contracts_made, contracts_lost, defenses_won, defenses_lost,
+                rubbers_won, rubbers_lost, avatar_url, avatar_blocked FROM users WHERE username = $1`,
+        [req.params.username],
+      );
+      const u = r.rows[0];
+      if (!u) return res.status(404).json({ error: 'No such player.' });
+      res.json({
+        username: u.username,
+        points: u.points,
+        contractsMade: u.contracts_made, contractsLost: u.contracts_lost,
+        defensesWon: u.defenses_won, defensesLost: u.defenses_lost,
+        rubbersWon: u.rubbers_won, rubbersLost: u.rubbers_lost,
+        avatar: u.avatar_blocked ? null : (u.avatar_url || null),
+      });
+    } catch (e) {
+      console.error('user lookup failed:', e.message);
+      res.status(500).json({ error: 'Lookup failed.' });
+    }
+  });
   app.get('/api/history', async (req, res) => {
     if (!req.session.userId) return res.json({ matches: [] });
     try {

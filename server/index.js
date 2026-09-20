@@ -145,7 +145,7 @@ const io = new Server(httpServer);
 io.engine.use(sessionMiddleware);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 120;
+const TURN_SECONDS = 30;
 const GRACE_SECONDS = 25;
 
 // ---- Rooms ----
@@ -242,7 +242,7 @@ function viewFor(room, seat, cid) {
   const seatQueue = {};
   for (const s of SEATS) {
     const v = room.seats[s];
-    seatStatus[s] = v == null ? 'empty' : (v === 'bot' ? 'bot' : (v === seat ? 'you' : 'taken'));
+    seatStatus[s] = v == null ? 'empty' : (v === 'bot' ? 'bot' : (v === cid ? 'you' : 'taken'));
     seatNames[s] = (v && v !== 'bot') ? (room.names.get(v) || 'Player') : null;
     seatAvatars[s] = (v && v !== 'bot') ? (room.avatars.get(v) || null) : null;
     seatCardBacks[s] = (v && v !== 'bot') ? (room.cardBacks.get(v) || null) : null;
@@ -479,11 +479,16 @@ function startNewRubber(room) {
   // Ownership resets to whoever is actually seated now; bot/empty seats open up for the new rubber.
   for (const s of SEATS) room.owners[s] = (typeof room.seats[s] === 'string' && room.seats[s].startsWith('u:')) ? room.seats[s] : null;
 }
+function fillEmptySeats(room) {
+  for (const s of SEATS) if (room.seats[s] == null) fillFromQueue(room, s); // seat queued players whose lock cleared
+}
+
 function onNewDeal(room) {
   const g = room.game;
   if (g.phase !== 'done' && g.phase !== 'passed-out') return;
   if (room.rubber.complete) { startNewRubber(room); room.game = newDeal(room, 1); }
   else room.game = newDeal(room, g.round + 1);
+  fillEmptySeats(room); // a spectator who queued gets seated now that their peek-lock cleared
   afterMove(room, false);
 }
 
@@ -552,17 +557,21 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Normal mode: sit an open/bot seat, or (on an occupied human seat) toggle queueing for it.
-    if (room.lockedThisDeal.has(cid)) return;
+    // Normal mode: sit an open/bot seat, or line up for an occupied one. A spectator queues and is seated next deal.
     const holder = room.seats[seat];
     const holderIsHuman = holder != null && holder !== 'bot';
-    if (holderIsHuman && holder !== cid) {
+    const toggleQueue = () => {
       const q = room.queues[seat];
       const i = q.indexOf(cid);
-      if (i >= 0) q.splice(i, 1); else { removeFromQueues(room, cid); q.push(cid); } // toggle
-      emitStates(room);
+      if (i >= 0) q.splice(i, 1); else { removeFromQueues(room, cid); q.push(cid); } // toggle membership
+    };
+    if (room.lockedThisDeal.has(cid)) {
+      room.reveal.delete(cid); // you saw the cards; stop watching and queue, seated once the lock clears next deal
+      toggleQueue();
+      reevaluate(room);
       return;
     }
+    if (holderIsHuman && holder !== cid) { toggleQueue(); emitStates(room); return; }
     for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
     room.seats[seat] = cid;
     removeFromQueues(room, cid);

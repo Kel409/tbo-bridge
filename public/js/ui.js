@@ -127,17 +127,16 @@ function renderSeatControls() {
     }
 
     // Normal mode.
-    if (st === 'you') el.innerHTML = btn('release', 'Leave');
-    else if (st === 'taken') {
-      // Sit on an occupied seat lines you up for it (no separate queue button).
-      el.innerHTML = (YOU_QUEUED === seat
-        ? btn('claim', 'Queued \u2713', 'Waiting for this seat \u2014 click to stop')
-        : btn('claim', 'Sit', 'Occupied \u2014 click to wait for this seat')) + waiting;
-    } else if (st === 'bot') {
-      el.innerHTML = (LOCKED ? '<button class="seatbtn" disabled>Sit</button>' : btn('claim', 'Sit')) + btn('removeBot', '\u2212 Bot');
-    } else { // empty
-      el.innerHTML = (LOCKED ? '<button class="seatbtn" disabled title="You saw the cards this deal">Sit</button>' : btn('claim', 'Sit')) + btn('addBot', '+ Bot');
-    }
+    if (st === 'you') { el.innerHTML = btn('release', 'Leave'); continue; }
+    const queued = YOU_QUEUED === seat;
+    const sitLabel = queued ? 'Queued \u2713' : 'Sit';
+    const sitTitle = queued ? 'Waiting for this seat \u2014 click to stop'
+      : (LOCKED ? 'Join the queue \u2014 you\u2019ll be seated next deal'
+        : (st === 'taken' ? 'Occupied \u2014 click to wait for this seat' : ''));
+    const sitBtn = btn('claim', sitLabel, sitTitle);
+    if (st === 'bot') el.innerHTML = sitBtn + btn('removeBot', '\u2212 Bot') + waiting;
+    else if (st === 'empty') el.innerHTML = sitBtn + btn('addBot', '+ Bot') + waiting;
+    else el.innerHTML = sitBtn + waiting; // taken
   }
 }
 

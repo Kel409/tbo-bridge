@@ -39,6 +39,8 @@ export async function initSchema() {
       defenses_lost  INTEGER NOT NULL DEFAULT 0,
       rubbers_won   INTEGER NOT NULL DEFAULT 0,
       rubbers_lost  INTEGER NOT NULL DEFAULT 0,
+      hcp_total     INTEGER NOT NULL DEFAULT 0,
+      hands_dealt   INTEGER NOT NULL DEFAULT 0,
       avatar_url    TEXT,
       avatar_blocked BOOLEAN NOT NULL DEFAULT false,
       card_back_url TEXT,
@@ -52,6 +54,8 @@ export async function initSchema() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS defenses_lost  INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_won   INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rubbers_lost  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS hcp_total     INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS hands_dealt   INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url    TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_blocked BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS card_back_url TEXT;

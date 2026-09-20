@@ -33,6 +33,10 @@ let SEAT_STATUS = null;  // { N:'empty'|'bot'|'you'|'taken', ... }
 let SEAT_NAMES_MAP = null; // { N: username|null, ... } for occupied human seats
 let SEAT_AVATARS = null;   // { N: url|null, ... }
 let SEAT_CARDBACKS = null; // { N: url|null, ... } custom card backs
+let SEAT_QUEUE = null;     // { N: count, ... } waiting counts (normal mode)
+let YOU_QUEUED = null;     // seat the viewer is queued for, or null
+let MY_OWNED = null;       // ranked: the seat the viewer owns this rubber
+let RUBBER_ACTIVE = false; // ranked: all four seats owned (rubber underway)
 const DEFAULT_AVATAR = '/img/default-avatar.png';
 let POS = {};            // logical seat -> screen position ('top'|'bottom'|'left'|'right'), set each render
 let SPECTATING = false;  // viewer chose to spectate (drives the button; not used for rendering)
@@ -63,6 +67,10 @@ export function render(game, onHumanPlay, view) {
   SEAT_NAMES_MAP = view.seatNames ?? null;
   SEAT_AVATARS = view.seatAvatars ?? null;
   SEAT_CARDBACKS = view.seatCardBacks ?? null;
+  SEAT_QUEUE = view.seatQueue ?? null;
+  YOU_QUEUED = view.youQueued ?? null;
+  MY_OWNED = view.myOwnedSeat ?? null;
+  RUBBER_ACTIVE = !!view.rubberActive;
   SPECTATING = !!view.spectating;
   REVEAL_ALL = !!view.revealAll;
   LOCKED = !!view.locked;
@@ -102,14 +110,34 @@ function renderSeatControls() {
     const el = document.getElementById('ctl-' + seat);
     if (!el) continue;
     const st = SEAT_STATUS ? SEAT_STATUS[seat] : 'empty';
-    const btn = (action, label) => `<button class="seatbtn" data-action="${action}" data-seat="${seat}">${label}</button>`;
-    const sit = LOCKED
-      ? '<button class="seatbtn" disabled title="You are locked out this deal (you saw the cards)">Sit</button>'
-      : btn('claim', 'Sit');
+    const btn = (action, label, title) => `<button class="seatbtn" data-action="${action}" data-seat="${seat}"${title ? ` title="${title}"` : ''}>${label}</button>`;
+    const n = SEAT_QUEUE ? (SEAT_QUEUE[seat] || 0) : 0;
+    const waiting = n ? ` <span class="queue-count">${n} waiting</span>` : '';
+
+    if (MODE === 'ranked') {
+      // Ranked: you own one seat for the rubber. Only your seat is actionable; before the rubber fills, open seats can be claimed.
+      if (seat === MY_OWNED) {
+        el.innerHTML = (st === 'you') ? btn('release', 'Leave') : btn('claim', 'Reclaim', 'Take your seat back from the bot');
+      } else if (!MY_OWNED && !RUBBER_ACTIVE && st === 'empty' && !LOCKED) {
+        el.innerHTML = btn('claim', 'Sit');
+      } else {
+        el.innerHTML = ''; // locked to someone else, or you're spectating this rubber
+      }
+      continue;
+    }
+
+    // Normal mode.
     if (st === 'you') el.innerHTML = btn('release', 'Leave');
-    else if (st === 'taken') el.innerHTML = '';
-    else if (st === 'bot') el.innerHTML = sit + btn('removeBot', '\u2212 Bot');
-    else el.innerHTML = MODE === 'ranked' ? sit : sit + btn('addBot', '+ Bot'); // ranked: players only, no bots
+    else if (st === 'taken') {
+      // Sit on an occupied seat lines you up for it (no separate queue button).
+      el.innerHTML = (YOU_QUEUED === seat
+        ? btn('claim', 'Queued \u2713', 'Waiting for this seat \u2014 click to stop')
+        : btn('claim', 'Sit', 'Occupied \u2014 click to wait for this seat')) + waiting;
+    } else if (st === 'bot') {
+      el.innerHTML = (LOCKED ? '<button class="seatbtn" disabled>Sit</button>' : btn('claim', 'Sit')) + btn('removeBot', '\u2212 Bot');
+    } else { // empty
+      el.innerHTML = (LOCKED ? '<button class="seatbtn" disabled title="You saw the cards this deal">Sit</button>' : btn('claim', 'Sit')) + btn('addBot', '+ Bot');
+    }
   }
 }
 
@@ -221,7 +249,7 @@ function renderHand(game, seat, onHumanPlay) {
   el.className = 'hand ' + (faceUp ? 'spread' : 'stacked'); // spread = readable cascade, stacked = compact pile
   el.innerHTML = '';
   let cards = game.hands[seat];
-  if (seat === MY_SEAT) cards = sortForDisplay(cards); // the viewer's preferred suit order applies to their own hand
+  if (faceUp) cards = sortForDisplay(cards); // your suit order applies to every hand you can see (own, dummy, reveal)
   for (const card of cards) {
     const btn = document.createElement('button');
     btn.className = 'card';

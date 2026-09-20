@@ -74,7 +74,7 @@ export function registerAuthRoutes(app) {
     if (!req.session.userId) return res.json({ username: null });
     try {
       const r = await query(
-        'SELECT username, points, contracts_made, contracts_lost, defenses_won, defenses_lost, rubbers_won, rubbers_lost, avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE id = $1',
+        'SELECT username, points, contracts_made, contracts_lost, defenses_won, defenses_lost, rubbers_won, rubbers_lost, hcp_total, hands_dealt, avatar_url, avatar_blocked, card_back_url, card_back_blocked FROM users WHERE id = $1',
         [req.session.userId],
       );
       const u = r.rows[0];
@@ -85,12 +85,30 @@ export function registerAuthRoutes(app) {
         contractsMade: u.contracts_made, contractsLost: u.contracts_lost,
         defensesWon: u.defenses_won, defensesLost: u.defenses_lost,
         rubbersWon: u.rubbers_won, rubbersLost: u.rubbers_lost,
+        // Overall average high-card points per hand = total HCP / total hands (not an average of per-rubber averages).
+        avgHcp: u.hands_dealt > 0 ? Math.round((u.hcp_total / u.hands_dealt) * 10) / 10 : null,
         avatar: u.avatar_blocked ? null : (u.avatar_url || null),
         cardBack: u.card_back_blocked ? null : (u.card_back_url || null),
         isAdmin: !!process.env.ADMIN_USERNAME && u.username === process.env.ADMIN_USERNAME,
       });
     } catch {
       res.json({ username: req.session.username });
+    }
+  });
+
+  // Public leaderboard: top players by lifetime points.
+  app.get('/api/leaderboard', async (req, res) => {
+    try {
+      const r = await query(
+        `SELECT username, points, rubbers_won, rubbers_lost FROM users
+         WHERE rubbers_won + rubbers_lost > 0 ORDER BY points DESC, rubbers_won DESC LIMIT 25`,
+      );
+      res.json({ players: r.rows.map((u) => ({
+        username: u.username, points: u.points, rubbersWon: u.rubbers_won, rubbersLost: u.rubbers_lost,
+      })) });
+    } catch (e) {
+      console.error('leaderboard query failed:', e.message);
+      res.json({ players: [] });
     }
   });
 

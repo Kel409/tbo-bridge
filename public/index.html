@@ -9,6 +9,7 @@
 <body>
   <header id="topbar">
     <h1 id="title">Bridge</h1>
+    <a id="home-link" href="/">Home</a>
     <a id="mode-link" href="#"></a>
     <div id="account">
       <img id="account-avatar" alt="" src="/img/default-avatar.png">
@@ -18,6 +19,7 @@
     <span id="clock"></span>
     <div id="auction"></div>
   </header>
+  <div id="turn-bar"></div>
 
   <!-- The table fills the screen. Seats hug the edges; played cards land in the center cross. -->
         <main id="table">
@@ -119,9 +121,12 @@
           <span>Card back</span>
         </div>
       </div>
+      <div id="profile-points"></div>
       <div id="profile-stats"></div>
-      <h3 class="profile-h3">Match history</h3>
-      <div id="profile-history"></div>
+      <details id="profile-history-wrap">
+        <summary>Match history</summary>
+        <div id="profile-history"></div>
+      </details>
       <div class="profile-actions">
         <button id="profile-clear">Clear images</button>
         <button id="profile-logout">Log out</button>
@@ -138,6 +143,69 @@
       <h2 id="player-name">Player</h2>
       <div id="player-stats"></div>
       <button id="player-close">Close</button>
+    </div>
+  </div>
+
+  <div id="home" hidden>
+    <div id="home-inner">
+      <h1 class="home-title">Bridge</h1>
+      <div id="home-auth"></div>
+      <div class="home-buttons">
+        <button id="home-normal">Normal</button>
+        <button id="home-ranked">Ranked</button>
+        <button id="home-leaderboard">Leaderboard</button>
+        <button id="home-profile">Profile</button>
+        <button id="home-help">How to play</button>
+        <button id="home-notes">Patch notes</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lb-overlay" hidden>
+    <div id="lb-panel" role="dialog" aria-modal="true" aria-label="Leaderboard">
+      <h2>Leaderboard</h2>
+      <div id="lb-content"></div>
+      <button id="lb-close">Close</button>
+    </div>
+  </div>
+
+  <div id="help-overlay" hidden>
+    <div id="help-panel" role="dialog" aria-modal="true" aria-label="How to play">
+      <h2>How to play</h2>
+      <div id="help-content">
+        <h3>The goal</h3>
+        <p>Bridge is a four-player trick-taking game in two partnerships: North-South versus East-West.
+        You bid for a contract, then play 13 tricks trying to make it (as declarer) or defeat it (as defender).</p>
+        <h3>Seats &amp; getting in</h3>
+        <p>From a table, click <b>Sit</b> on a seat. In Normal you can add bots to empty seats and sit anytime;
+        clicking Sit on an occupied seat lines you up for it. In Ranked you lock into your seat for the whole
+        rubber, four humans are needed to start, and results count toward your profile.</p>
+        <h3>Bidding</h3>
+        <p>On your turn, pick a <b>level</b> (1-7) and a <b>strain</b> (&clubs; &diams; &hearts; &spades; or NT),
+        or <b>Pass</b>. Each bid must beat the last. <b>Double</b> an opponent's contract to raise the stakes;
+        <b>Redouble</b> if they doubled yours. Three passes end the auction and set the contract. The highest
+        bidder's side declares; the first of that side to name the strain is <b>declarer</b>.</p>
+        <h3>Playing</h3>
+        <p>The player left of declarer leads. Follow the suit led if you can; otherwise play anything (trumps win).
+        Highest card of the led suit wins a trick unless someone trumps. Declarer also plays the <b>dummy</b>
+        (their partner's hand, shown face up after the opening lead). Your legal cards are highlighted.</p>
+        <h3>Scoring (rubber)</h3>
+        <p>Making your contract scores trick points below the line; reach 100 to win a <b>game</b>, and two games
+        win the <b>rubber</b>. Overtricks, penalties for going down, doubling, honors, and the rubber bonus score
+        above the line. In Ranked, each finished rubber adjusts your points, contracts, defenses, and record.</p>
+        <h3>Turns</h3>
+        <p>You have 30 seconds on your turn (a bar and countdown show the time). If you run out, the server
+        auto-plays a safe move. Disconnect briefly and a bot covers your seat until you return.</p>
+      </div>
+      <button id="help-close">Close</button>
+    </div>
+  </div>
+
+  <div id="notes-overlay" hidden>
+    <div id="notes-panel" role="dialog" aria-modal="true" aria-label="Patch notes">
+      <h2>Patch notes</h2>
+      <div id="notes-content"></div>
+      <button id="notes-close">Close</button>
     </div>
   </div>
 

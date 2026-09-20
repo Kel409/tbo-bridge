@@ -19,6 +19,7 @@
   --card-face:       color-mix(in srgb, var(--color-bg), white 9%);  /* solid, clearly above the felt */
   --card-face-lit:   color-mix(in srgb, var(--color-bg), white 18%); /* a playable card */
   --card-face-hover: color-mix(in srgb, var(--color-bg), white 26%); /* the card under the cursor */
+  --glow: color-mix(in srgb, var(--color-accent-text) 30%, transparent); /* turn spotlight, follows the accent */
 
   --suit-red: var(--color-accent-text); /* hearts, diamonds */
   --suit-white: var(--color-text);      /* spades, clubs */
@@ -271,10 +272,10 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   transition: background 0.25s ease;
 }
 /* A pool of light near the active seat, fading toward the center of the table. */
-.spot-top    { background: radial-gradient(ellipse 42% 55% at 50% 14%, rgba(255, 250, 235, 0.16), transparent 72%); }
-.spot-bottom { background: radial-gradient(ellipse 42% 55% at 50% 86%, rgba(255, 250, 235, 0.16), transparent 72%); }
-.spot-left   { background: radial-gradient(ellipse 55% 42% at 12% 50%, rgba(255, 250, 235, 0.16), transparent 72%); }
-.spot-right  { background: radial-gradient(ellipse 55% 42% at 88% 50%, rgba(255, 250, 235, 0.16), transparent 72%); }
+.spot-top    { background: radial-gradient(ellipse 42% 55% at 50% 14%, var(--glow), transparent 72%); }
+.spot-bottom { background: radial-gradient(ellipse 42% 55% at 50% 86%, var(--glow), transparent 72%); }
+.spot-left   { background: radial-gradient(ellipse 55% 42% at 12% 50%, var(--glow), transparent 72%); }
+.spot-right  { background: radial-gradient(ellipse 55% 42% at 88% 50%, var(--glow), transparent 72%); }
 
 /* ---- Trump emblem (behind the played cards) ---- */
 #trump-emblem {
@@ -292,9 +293,9 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
   display: flex; flex-direction: column; gap: 2px; align-items: center;
 }
 .call-item {
-  padding: 0.05rem 0.4rem; border-radius: 5px;
-  background: rgba(0, 0, 0, 0.55); border: 1px solid var(--color-border);
-  font-size: 0.8rem; line-height: 1.3; white-space: nowrap;
+  padding: 0.15rem 0.55rem; border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6); border: 1px solid var(--color-border);
+  font-size: 1.05rem; font-weight: 700; line-height: 1.35; white-space: nowrap;
 }
 .call-item.pass { color: var(--color-muted); }
 .call-item.red { color: var(--suit-red); }
@@ -481,3 +482,65 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 /* Point-total sign colours (used in profile and player-stats popups). */
 .pos { color: var(--suit-white); }
 .neg { color: var(--color-accent-text); }
+
+/* ---- Home screen (landing). Sits above the game/tabs but below the popups. ---- */
+#home { position: fixed; inset: 0; z-index: 55; display: flex; align-items: center; justify-content: center; background: var(--color-bg); }
+#home[hidden] { display: none; }
+#home-inner { display: flex; flex-direction: column; align-items: center; gap: 1.3rem; }
+.home-title { font-family: Georgia, "Times New Roman", serif; color: var(--color-accent-text); font-size: 3rem; margin: 0; letter-spacing: 0.08em; }
+#home-auth { color: var(--color-muted); font-size: 0.9rem; min-height: 1.2rem; }
+#home-auth button { font: inherit; font-size: 0.8rem; margin-left: 0.4rem; padding: 0.15rem 0.5rem; border-radius: 5px;
+  color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-accent); cursor: pointer; }
+.home-buttons { display: flex; flex-direction: column; gap: 0.7rem; width: 220px; }
+.home-buttons button { padding: 0.9rem; font-size: 1.05rem; border-radius: 8px;
+  color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); cursor: pointer; }
+.home-buttons button:hover { border-color: var(--color-accent); }
+#home-ranked { border-color: var(--color-accent); }
+#home-link { font-size: 0.8rem; color: var(--color-accent-text); text-decoration: none; margin-left: 0.5rem; }
+#home-link:hover { text-decoration: underline; }
+
+/* ---- Leaderboard popup ---- */
+#lb-overlay { position: fixed; inset: 0; z-index: 75; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); }
+#lb-overlay[hidden] { display: none; }
+#lb-panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.3rem 1.4rem; min-width: 320px; max-width: 92vw; max-height: 85vh; overflow: auto; box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75); }
+#lb-panel h2 { margin: 0 0 0.8rem; font-family: Georgia, "Times New Roman", serif; color: var(--color-accent-text); }
+.lb-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.lb-table th, .lb-table td { padding: 0.35rem 0.7rem; text-align: right; border-bottom: 1px solid var(--color-border); }
+.lb-table th:nth-child(2), .lb-table td:nth-child(2) { text-align: left; }
+.lb-table thead th { color: var(--color-muted); font-weight: 600; }
+#lb-close { margin-top: 1rem; border-color: var(--color-accent); }
+
+/* Turn timer bar (top of screen), width shrinks as time runs out; colour follows the accent. */
+#turn-bar { flex: 0 0 auto; height: 4px; width: 0; background: var(--color-accent); transition: width 0.4s linear; }
+
+.queue-count { font-size: 0.72rem; color: var(--color-muted); }
+
+/* ---- Profile: big centred points, stat rows with proportion bars, history dropdown ---- */
+#profile-points { text-align: center; margin: 0.2rem 0; }
+#profile-points span { font-size: 2.6rem; font-weight: 800; line-height: 1; }
+#profile-points small { display: block; color: var(--color-muted); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 0.2rem; }
+#profile-stats { display: flex; flex-direction: column; gap: 0.5rem; }
+.stat-row { display: flex; align-items: center; gap: 0.8rem; }
+.stat-label { flex: 0 0 auto; font-size: 0.88rem; color: var(--color-text); white-space: nowrap; }
+.stat-label b { color: var(--color-accent-text); font-weight: 700; }
+.stat-bar { flex: 1 1 auto; height: 8px; border-radius: 4px; background: var(--color-bg); border: 1px solid var(--color-border); overflow: hidden; }
+.stat-fill { display: block; height: 100%; background: var(--color-accent); }
+#profile-history-wrap summary { cursor: pointer; color: var(--color-muted); font-size: 0.9rem; padding: 0.3rem 0; }
+#profile-history { max-height: 40vh; overflow-y: auto; margin-top: 0.5rem; }
+
+/* ---- Help & Patch notes popups ---- */
+#help-overlay, #notes-overlay { position: fixed; inset: 0; z-index: 75; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); }
+#help-overlay[hidden], #notes-overlay[hidden] { display: none; }
+#help-panel, #notes-panel {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 1.3rem 1.5rem; width: 460px; max-width: 94vw; max-height: 85vh; overflow: auto; box-shadow: 0 12px 44px rgba(0, 0, 0, 0.75);
+}
+#help-panel h2, #notes-panel h2 { margin: 0 0 0.6rem; font-family: Georgia, "Times New Roman", serif; color: var(--color-accent-text); }
+#help-content h3 { margin: 0.9rem 0 0.2rem; font-size: 0.95rem; color: var(--color-accent-text); }
+#help-content p { margin: 0; font-size: 0.86rem; line-height: 1.5; color: var(--color-text); }
+#help-close, #notes-close { margin-top: 1rem; border-color: var(--color-accent); }
+.note { border-bottom: 1px solid var(--color-border); padding: 0.5rem 0; }
+.note-msg { color: var(--color-text); font-size: 0.88rem; }
+.note-date { color: var(--color-muted); font-size: 0.76rem; margin-top: 0.15rem; }
+.note-date a { color: var(--color-accent-text); text-decoration: none; }

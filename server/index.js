@@ -160,6 +160,9 @@ function makeRoom(mode) {
     recorded: new Set(),
     rubberRecorded: false,    // ranked stats recorded for the current rubber?
     dealTally: { NS: { cm: 0, cl: 0, dw: 0, dl: 0 }, EW: { cm: 0, cl: 0, dw: 0, dl: 0 } }, // per side this rubber
+    hcpTally: { N: { sum: 0, count: 0 }, E: { sum: 0, count: 0 }, S: { sum: 0, count: 0 }, W: { sum: 0, count: 0 } }, // high-card points per seat this rubber
+    queues: { N: [], E: [], S: [], W: [] }, // clientIds waiting for each seat (normal mode)
+    owners: { N: null, E: null, S: null, W: null }, // ranked: who owns each seat for the current rubber
     dealGameWon: null,
     seats: { N: null, E: null, S: null, W: null },
     timer: null,
@@ -190,11 +193,42 @@ function seatIsAuto(room, seat) {
 }
 function clearClock(room) { clearTimeout(room.clock); room.clock = null; room.turnEndsAt = null; }
 
+// High-card points of a 13-card hand (A=4, K=3, Q=2, J=1).
+const HCP_VALUE = { 14: 4, 13: 3, 12: 2, 11: 1 };
+function handHCP(cards) { let h = 0; for (const c of cards) h += HCP_VALUE[c.rank] || 0; return h; }
+
+function removeFromQueues(room, cid) {
+  for (const s of SEATS) { const q = room.queues[s]; const i = q.indexOf(cid); if (i >= 0) q.splice(i, 1); }
+}
+function ownerOf(room, cid) { return SEATS.find((s) => room.owners[s] === cid) || null; } // ranked seat this client owns
+function rubberActive(room) { return room.mode === 'ranked' && SEATS.every((s) => room.owners[s] != null); }
+function seatOfQueued(room, cid) { return SEATS.find((s) => room.queues[s].includes(cid)) || null; }
+// When a seat frees, seat the first eligible waiter (connected; logged in for ranked; not locked this deal).
+function fillFromQueue(room, seat) {
+  if (room.seats[seat] != null) return;
+  const q = room.queues[seat];
+  while (q.length) {
+    const cid = q.shift();
+    const sock = [...room.sockets].find((s) => s.data.clientId === cid);
+    if (!sock) continue;
+    if (room.mode === 'ranked' && !sock.data.loggedIn) continue;
+    if (room.lockedThisDeal.has(cid)) continue;
+    for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
+    room.seats[seat] = cid;
+    removeFromQueues(room, cid);
+    return;
+  }
+}
+
 // ---- Per-player view ----
 function viewFor(room, seat, cid) {
   const g = room.game;
+  const myOwned = ownerOf(room, cid);
+  const active = rubberActive(room);
   const chosenSpectate = room.reveal.has(cid);
-  const revealAll = chosenSpectate || g.phase === 'done';
+  // A non-participant in an active ranked rubber automatically sees all cards (can't join until it ends).
+  const autoSpectate = room.mode === 'ranked' && active && !myOwned && seat == null;
+  const revealAll = chosenSpectate || autoSpectate || g.phase === 'done';
   const source = (g.phase === 'done' && room.originalHands) ? room.originalHands : g.hands;
   const hands = {};
   for (const s of SEATS) {
@@ -205,12 +239,14 @@ function viewFor(room, seat, cid) {
   const seatNames = {};
   const seatAvatars = {};
   const seatCardBacks = {};
+  const seatQueue = {};
   for (const s of SEATS) {
     const v = room.seats[s];
     seatStatus[s] = v == null ? 'empty' : (v === 'bot' ? 'bot' : (v === seat ? 'you' : 'taken'));
     seatNames[s] = (v && v !== 'bot') ? (room.names.get(v) || 'Player') : null;
     seatAvatars[s] = (v && v !== 'bot') ? (room.avatars.get(v) || null) : null;
     seatCardBacks[s] = (v && v !== 'bot') ? (room.cardBacks.get(v) || null) : null;
+    seatQueue[s] = room.queues[s].length;
   }
   return {
     game: { ...g, hands },
@@ -221,6 +257,10 @@ function viewFor(room, seat, cid) {
     seatNames,
     seatAvatars,
     seatCardBacks,
+    seatQueue,
+    youQueued: seatOfQueued(room, cid),
+    myOwnedSeat: myOwned,
+    rubberActive: active,
     you: seat,
     mode: room.mode,
     turnEndsAt: room.turnEndsAt,
@@ -303,13 +343,15 @@ async function settleRubber(room) {
     if (!info) continue;
     const side = PARTNERSHIPS[seat];
     const t = room.dealTally[side];
+    const h = room.hcpTally[seat];
     const rw = side === winner ? 1 : 0;
     try {
       await query(
         `UPDATE users SET points = points + $1, contracts_made = contracts_made + $2, contracts_lost = contracts_lost + $3,
                           defenses_won = defenses_won + $4, defenses_lost = defenses_lost + $5,
-                          rubbers_won = rubbers_won + $6, rubbers_lost = rubbers_lost + $7 WHERE id = $8`,
-        [delta[side], t.cm, t.cl, t.dw, t.dl, rw, 1 - rw, info.userId],
+                          rubbers_won = rubbers_won + $6, rubbers_lost = rubbers_lost + $7,
+                          hcp_total = hcp_total + $8, hands_dealt = hands_dealt + $9 WHERE id = $10`,
+        [delta[side], t.cm, t.cl, t.dw, t.dl, rw, 1 - rw, h.sum, h.count, info.userId],
       );
     } catch (e) { console.error('rubber stat update failed:', e.message); }
   }
@@ -327,6 +369,16 @@ function maybeFinishRound(room) {
   if ((g.phase === 'done' || g.phase === 'passed-out') && !room.recorded.has(g.round)) {
     room.recorded.add(g.round);
     recordRound(room);
+    // Ranked: tally each seated player's high-card points for this deal (for the per-hand average).
+    if (room.mode === 'ranked' && room.originalHands) {
+      for (const seat of SEATS) {
+        const v = room.seats[seat];
+        if (typeof v === 'string' && v.startsWith('u:')) {
+          room.hcpTally[seat].sum += handHCP(room.originalHands[seat]);
+          room.hcpTally[seat].count += 1;
+        }
+      }
+    }
   }
 }
 
@@ -423,6 +475,9 @@ function startNewRubber(room) {
   room.recorded.clear();
   room.rubberRecorded = false;
   room.dealTally = { NS: { cm: 0, cl: 0, dw: 0, dl: 0 }, EW: { cm: 0, cl: 0, dw: 0, dl: 0 } };
+  room.hcpTally = { N: { sum: 0, count: 0 }, E: { sum: 0, count: 0 }, S: { sum: 0, count: 0 }, W: { sum: 0, count: 0 } };
+  // Ownership resets to whoever is actually seated now; bot/empty seats open up for the new rubber.
+  for (const s of SEATS) room.owners[s] = (typeof room.seats[s] === 'string' && room.seats[s].startsWith('u:')) ? room.seats[s] : null;
 }
 function onNewDeal(room) {
   const g = room.game;
@@ -479,13 +534,38 @@ io.on('connection', (socket) => {
   socket.on('claim', (seat) => {
     const cid = socket.data.clientId;
     if (!cid || !SEATS.includes(seat)) return;
-    if (room.mode === 'ranked' && !socket.data.loggedIn) return; // ranked requires an account to sit
+
+    if (room.mode === 'ranked') {
+      if (!socket.data.loggedIn) return;
+      const myOwned = ownerOf(room, cid);
+      if (myOwned) {
+        if (seat !== myOwned) return;      // locked to your own seat; no switching
+        room.seats[seat] = cid;            // reclaim your seat from the bot placeholder
+      } else {
+        if (rubberActive(room)) return;    // rubber underway: non-participants can't join
+        if (room.owners[seat] != null) return; // owned by someone else
+        if (room.lockedThisDeal.has(cid)) return; // you peeked this deal
+        room.owners[seat] = cid;           // lock this seat to you for the rubber
+        room.seats[seat] = cid;
+      }
+      reevaluate(room);
+      return;
+    }
+
+    // Normal mode: sit an open/bot seat, or (on an occupied human seat) toggle queueing for it.
     if (room.lockedThisDeal.has(cid)) return;
     const holder = room.seats[seat];
     const holderIsHuman = holder != null && holder !== 'bot';
-    if (holderIsHuman && holder !== cid && (clientConnected(room, holder) || room.grace.has(holder))) return;
+    if (holderIsHuman && holder !== cid) {
+      const q = room.queues[seat];
+      const i = q.indexOf(cid);
+      if (i >= 0) q.splice(i, 1); else { removeFromQueues(room, cid); q.push(cid); } // toggle
+      emitStates(room);
+      return;
+    }
     for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
     room.seats[seat] = cid;
+    removeFromQueues(room, cid);
     reevaluate(room);
   });
 
@@ -505,7 +585,12 @@ io.on('connection', (socket) => {
   socket.on('release', () => {
     const cid = socket.data.clientId;
     if (!cid) return;
-    for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
+    if (room.mode === 'ranked') {
+      const s = ownerOf(room, cid);
+      if (s && room.seats[s] === cid) room.seats[s] = 'bot'; // bot holds your seat; you keep ownership to reclaim
+    } else {
+      for (const s of SEATS) if (room.seats[s] === cid) { room.seats[s] = null; fillFromQueue(room, s); }
+    }
     reevaluate(room);
   });
 
@@ -517,6 +602,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('removeBot', (seat) => {
+    if (room.mode === 'ranked') return; // ranked bots are owner placeholders, managed by leave/reclaim
     if (!SEATS.includes(seat) || room.seats[seat] !== 'bot') return;
     room.seats[seat] = null;
     reevaluate(room);
@@ -592,13 +678,17 @@ io.on('connection', (socket) => {
     if (seat && !room.grace.has(cid)) {
       const handle = setTimeout(() => {
         room.grace.delete(cid);
-        if (room.seats[seat] === cid && !clientConnected(room, cid)) room.seats[seat] = null;
+        if (room.seats[seat] === cid && !clientConnected(room, cid)) {
+          if (room.mode === 'ranked' && room.owners[seat] === cid) room.seats[seat] = 'bot'; // keep the owner's seat, bot fills
+          else { room.seats[seat] = null; fillFromQueue(room, seat); }
+        }
         reevaluate(room);
       }, GRACE_SECONDS * 1000);
       room.grace.set(cid, handle);
     }
     room.reveal.delete(cid);
     room.lockedThisDeal.delete(cid);
+    removeFromQueues(room, cid);
     reevaluate(room);
   });
 });

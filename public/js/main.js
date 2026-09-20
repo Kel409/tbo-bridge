@@ -3,8 +3,11 @@
 
 import { render } from './ui.js';
 
-// Mode from the URL: ?mode=ranked, otherwise normal. Ranked requires an account to sit and records results.
-const mode = new URLSearchParams(location.search).get('mode') === 'ranked' ? 'ranked' : 'normal';
+// Landing vs game: '/' with no (or unknown) mode shows the home screen; ?mode=normal|ranked plays.
+const rawMode = new URLSearchParams(location.search).get('mode');
+const onHome = rawMode !== 'normal' && rawMode !== 'ranked';
+const mode = rawMode === 'ranked' ? 'ranked' : 'normal';
+document.getElementById('home').hidden = !onHome;
 const socket = io({ query: { mode } }); // connect to this mode's room
 
 // Title and the switch link.
@@ -32,6 +35,7 @@ let bidsOpen = false;       // local: is the bid-order popup showing
 let seenRounds = 0;         // to auto-open the scoreboard when a deal finishes
 let suitOrder = (localStorage.getItem('suitOrder') || 'SHDC').split(''); // viewer's preferred suit order
 let rubberWasComplete = false; // to detect a ranked rubber finishing (for stats refresh)
+const TURN_SECONDS = 30; // matches the server; used to size the turn bar
 
 function draw() {
   if (!state) return;
@@ -46,6 +50,10 @@ function draw() {
     seatNames: state.seatNames,
     seatAvatars: state.seatAvatars,
     seatCardBacks: state.seatCardBacks,
+    seatQueue: state.seatQueue,
+    youQueued: state.youQueued,
+    myOwnedSeat: state.myOwnedSeat,
+    rubberActive: state.rubberActive,
     spectating: state.spectating,
     revealAll: state.revealAll,
     locked: state.locked,
@@ -79,14 +87,19 @@ socket.on('state', (s) => {
 // The server sends turnEndsAt (epoch ms) when a human is on the clock. Tick the display locally each second.
 function updateClock() {
   const el = document.getElementById('clock');
-  if (!el) return;
+  const bar = document.getElementById('turn-bar');
   const endsAt = state && state.turnEndsAt;
-  if (!endsAt) { el.textContent = ''; el.classList.remove('low'); return; }
-  const secs = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
-  el.textContent = secs + 's';
-  el.classList.toggle('low', secs <= 5);
+  if (!endsAt) {
+    if (el) { el.textContent = ''; el.classList.remove('low'); }
+    if (bar) bar.style.width = '0';
+    return;
+  }
+  const remaining = Math.max(0, endsAt - Date.now());
+  const secs = Math.ceil(remaining / 1000);
+  if (el) { el.textContent = secs + 's'; el.classList.toggle('low', secs <= 5); }
+  if (bar) bar.style.width = Math.min(100, (remaining / (TURN_SECONDS * 1000)) * 100) + '%'; // shrinks to 0
 }
-setInterval(updateClock, 500);
+setInterval(updateClock, 400);
 
 // ---- Intents to the server ----
 function onCardClick(card) {
@@ -219,9 +232,48 @@ function renderAuthBar() {
 
 let myStats = null;
 async function refreshMe() {
-  try { myStats = await (await fetch('/api/me')).json(); renderAuthBar(); renderProfile(); } catch { /* ignore */ }
+  try { myStats = await (await fetch('/api/me')).json(); renderAuthBar(); renderProfile(); renderHomeAuth(); } catch { /* ignore */ }
 }
 refreshMe();
+
+// Home screen: auth line, the four options, and the leaderboard.
+function renderHomeAuth() {
+  const el = document.getElementById('home-auth');
+  if (!el) return;
+  el.innerHTML = (myStats && myStats.username != null)
+    ? `Signed in as ${myStats.username} <button id="home-logout">Log out</button>`
+    : `Playing as guest <button id="home-login">Log in</button>`;
+}
+document.getElementById('home-auth').addEventListener('click', (e) => {
+  if (e.target.id === 'home-login') openAuth();
+  else if (e.target.id === 'home-logout') logout();
+});
+document.getElementById('home-normal').addEventListener('click', () => { location.href = '?mode=normal'; });
+document.getElementById('home-ranked').addEventListener('click', () => { location.href = '?mode=ranked'; });
+document.getElementById('home-profile').addEventListener('click', () => {
+  if (myStats && myStats.username != null) openProfile(); else openAuth();
+});
+document.getElementById('home-leaderboard').addEventListener('click', openLeaderboard);
+
+async function openLeaderboard() {
+  const overlay = document.getElementById('lb-overlay');
+  const content = document.getElementById('lb-content');
+  content.innerHTML = 'Loading\u2026';
+  overlay.hidden = false;
+  try {
+    const data = await (await fetch('/api/leaderboard')).json();
+    if (!data.players.length) { content.innerHTML = '<p class="sb-empty">No ranked results yet.</p>'; return; }
+    const rows = data.players.map((p, i) => {
+      const cls = p.points >= 0 ? 'pos' : 'neg';
+      return `<tr><td>${i + 1}</td><td>${p.username}</td><td class="${cls}">${p.points}</td><td>${p.rubbersWon}-${p.rubbersLost}</td></tr>`;
+    }).join('');
+    content.innerHTML = `<table class="lb-table">
+      <thead><tr><th>#</th><th>Player</th><th>Points</th><th>Rubbers</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch {
+    content.innerHTML = '<p class="sb-empty">Could not load.</p>';
+  }
+}
+document.getElementById('lb-close').addEventListener('click', () => { document.getElementById('lb-overlay').hidden = true; });
 
 // Clicking the top-right avatar opens the profile (or login prompt).
 document.getElementById('account-avatar').addEventListener('click', () => {
@@ -247,7 +299,7 @@ function openProfile() { const o = document.getElementById('profile-overlay'); i
 function closeProfile() { const o = document.getElementById('profile-overlay'); if (o) o.hidden = true; }
 
 function renderProfile() {
-  if (!(state && state.loggedIn) || !myStats) return;
+  if (!myStats || myStats.username == null) return;
   document.getElementById('profile-name').textContent = myStats.username || 'Profile';
   document.getElementById('profile-avatar').src = myStats.avatar || '/img/default-avatar.png';
   const cardEl = document.getElementById('profile-cardback');
@@ -255,10 +307,26 @@ function renderProfile() {
     if (myStats.cardBack) { cardEl.style.backgroundImage = `url("${myStats.cardBack}")`; cardEl.textContent = ''; }
     else { cardEl.style.backgroundImage = ''; cardEl.textContent = 'Card back'; }
   }
+  // Big, centered points (the headline stat).
   const p = myStats.points >= 0 ? 'pos' : 'neg';
+  const bigEl = document.getElementById('profile-points');
+  if (bigEl) bigEl.innerHTML = `<span class="${p}">${myStats.points}</span><small>points</small>`;
+
+  // A stat row: label + won-lost on the left, a proportion bar (won share) on the right.
+  const row = (label, won, lost) => {
+    const total = won + lost;
+    const pct = total ? Math.round((won / total) * 100) : 0;
+    return `<div class="stat-row">
+      <span class="stat-label">${label} <b>${won}\u2013${lost}</b></span>
+      <span class="stat-bar"><span class="stat-fill" style="width:${pct}%"></span></span>
+    </div>`;
+  };
+  const avg = myStats.avgHcp == null ? '\u2014' : myStats.avgHcp;
   document.getElementById('profile-stats').innerHTML =
-    `<span class="${p}">${myStats.points} pts</span> \u00b7 rubbers ${myStats.rubbersWon}-${myStats.rubbersLost}<br>`
-    + `contracts ${myStats.contractsMade}-${myStats.contractsLost} \u00b7 defenses ${myStats.defensesWon}-${myStats.defensesLost}`;
+    row('Rubbers', myStats.rubbersWon, myStats.rubbersLost)
+    + row('Contracts', myStats.contractsMade, myStats.contractsLost)
+    + row('Defenses', myStats.defensesWon, myStats.defensesLost)
+    + `<div class="stat-row"><span class="stat-label">Avg HCP / hand <b>${avg}</b></span></div>`;
 }
 
 async function uploadImage(endpoint, field, file) {
@@ -288,7 +356,7 @@ document.getElementById('profile-close').addEventListener('click', closeProfile)
 async function loadHistory() {
   const contentEl = document.getElementById('profile-history');
   if (!contentEl) return;
-  if (!(state && state.loggedIn)) { contentEl.innerHTML = '<p class="sb-empty">Log in to see your match history.</p>'; return; }
+  if (!(myStats && myStats.username != null)) { contentEl.innerHTML = '<p class="sb-empty">Log in to see your match history.</p>'; return; }
   contentEl.innerHTML = 'Loading\u2026';
   try {
     const data = await (await fetch('/api/history')).json();
@@ -396,3 +464,39 @@ document.getElementById('table').addEventListener('click', (e) => {
   if (av && av.dataset.user) showPlayer(av.dataset.user);
 });
 document.getElementById('player-close').addEventListener('click', () => { document.getElementById('player-overlay').hidden = true; });
+
+// ---- Home: How to play (static) and Patch notes (live from GitHub commits) ----
+const GITHUB_REPO = 'Kel409/tbo-bridge'; // public repo; read-only, no token
+
+document.getElementById('home-help').addEventListener('click', () => { document.getElementById('help-overlay').hidden = false; });
+document.getElementById('help-close').addEventListener('click', () => { document.getElementById('help-overlay').hidden = true; });
+
+document.getElementById('home-notes').addEventListener('click', openNotes);
+document.getElementById('notes-close').addEventListener('click', () => { document.getElementById('notes-overlay').hidden = true; });
+
+let notesLoaded = false;
+async function openNotes() {
+  document.getElementById('notes-overlay').hidden = false;
+  if (notesLoaded) return; // fetch once per page (GitHub rate-limits unauthenticated calls)
+  const el = document.getElementById('notes-content');
+  el.textContent = 'Loading\u2026';
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=20`);
+    if (!res.ok) { el.innerHTML = '<p class="sb-empty">Could not load updates right now.</p>'; return; }
+    const commits = await res.json();
+    el.innerHTML = commits.map((c) => {
+      const msg = (c.commit.message || '').split('\n')[0]; // first line only
+      const when = new Date(c.commit.author.date).toLocaleDateString();
+      const url = c.html_url;
+      return `<div class="note"><div class="note-msg">${escapeHtml(msg)}</div>
+        <div class="note-date">${when} \u00b7 <a href="${url}" target="_blank" rel="noopener">view</a></div></div>`;
+    }).join('');
+    notesLoaded = true;
+  } catch {
+    el.innerHTML = '<p class="sb-empty">Could not load updates right now.</p>';
+  }
+}
+
+function escapeHtml(t) {
+  return t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}

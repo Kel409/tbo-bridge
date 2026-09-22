@@ -35,7 +35,7 @@ let bidsOpen = false;       // local: is the bid-order popup showing
 let seenRounds = 0;         // to auto-open the scoreboard when a deal finishes
 let suitOrder = (localStorage.getItem('suitOrder') || 'SHDC').split(''); // viewer's preferred suit order
 let rubberWasComplete = false; // to detect a ranked rubber finishing (for stats refresh)
-const TURN_SECONDS = 30; // matches the server; used to size the turn bar
+const TURN_SECONDS = 120; // matches the server; used to size the turn bar
 
 function draw() {
   if (!state) return;

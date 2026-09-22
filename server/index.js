@@ -145,7 +145,7 @@ const io = new Server(httpServer);
 io.engine.use(sessionMiddleware);
 
 const PLAY_GAP = 650, TRICK_PAUSE = 1400, BID_GAP = 450;
-const TURN_SECONDS = 30;
+const TURN_SECONDS = 120;
 const GRACE_SECONDS = 25;
 
 // ---- Rooms ----
@@ -226,13 +226,15 @@ function viewFor(room, seat, cid) {
   const myOwned = ownerOf(room, cid);
   const active = rubberActive(room);
   const chosenSpectate = room.reveal.has(cid);
+  const isQueued = seatOfQueued(room, cid) != null; // waiting for a seat: watch until you're seated next deal
   // A non-participant in an active ranked rubber automatically sees all cards (can't join until it ends).
   const autoSpectate = room.mode === 'ranked' && active && !myOwned && seat == null;
-  const revealAll = chosenSpectate || autoSpectate || g.phase === 'done';
+  const revealAll = chosenSpectate || autoSpectate || isQueued || g.phase === 'done';
   const source = (g.phase === 'done' && room.originalHands) ? room.originalHands : g.hands;
+  const iAmDummy = seat != null && g.dummy === seat; // if you're the dummy, you also see your partner (declarer)
   const hands = {};
   for (const s of SEATS) {
-    const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy);
+    const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy) || (iAmDummy && s === g.declarer);
     hands[s] = canSee ? source[s] : source[s].map(() => ({ hidden: true }));
   }
   const seatStatus = {};
@@ -480,7 +482,10 @@ function startNewRubber(room) {
   for (const s of SEATS) room.owners[s] = (typeof room.seats[s] === 'string' && room.seats[s].startsWith('u:')) ? room.seats[s] : null;
 }
 function fillEmptySeats(room) {
-  for (const s of SEATS) if (room.seats[s] == null) fillFromQueue(room, s); // seat queued players whose lock cleared
+  for (const s of SEATS) {
+    if (room.queues[s].length && room.seats[s] === 'bot') room.seats[s] = null; // kick the bot so a waiting player can take the seat
+    if (room.seats[s] == null) fillFromQueue(room, s);
+  }
 }
 
 function onNewDeal(room) {
@@ -557,21 +562,24 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Normal mode: sit an open/bot seat, or line up for an occupied one. A spectator queues and is seated next deal.
+    // Normal mode: sit an open/bot seat, or line up for an occupied one. Queued players watch and are seated next deal.
     const holder = room.seats[seat];
     const holderIsHuman = holder != null && holder !== 'bot';
-    const toggleQueue = () => {
-      const q = room.queues[seat];
-      const i = q.indexOf(cid);
-      if (i >= 0) q.splice(i, 1); else { removeFromQueues(room, cid); q.push(cid); } // toggle membership
-    };
-    if (room.lockedThisDeal.has(cid)) {
-      room.reveal.delete(cid); // you saw the cards; stop watching and queue, seated once the lock clears next deal
-      toggleQueue();
+    const q = room.queues[seat];
+    const alreadyQueued = q.includes(cid);
+    const mustQueue = room.lockedThisDeal.has(cid) || (holderIsHuman && holder !== cid);
+    if (mustQueue) {
+      if (alreadyQueued) {
+        q.splice(q.indexOf(cid), 1); // toggle off
+      } else {
+        removeFromQueues(room, cid);
+        q.push(cid);
+        room.reveal.delete(cid);        // reveal is driven by "queued" now, so it clears the lock next deal
+        room.lockedThisDeal.add(cid);   // you can watch, but can't be seated until the next deal
+      }
       reevaluate(room);
       return;
     }
-    if (holderIsHuman && holder !== cid) { toggleQueue(); emitStates(room); return; }
     for (const s of SEATS) if (room.seats[s] === cid) room.seats[s] = null;
     room.seats[seat] = cid;
     removeFromQueues(room, cid);

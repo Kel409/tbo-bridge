@@ -244,7 +244,9 @@ function renderSeatLabels(game) {
 
 function renderHand(game, seat, onHumanPlay) {
   const el = document.getElementById('hand-' + seat);
-  const faceUp = REVEAL_ALL || seat === MY_SEAT || (game.dummyRevealed && seat === game.dummy);
+  const iAmDummy = MY_SEAT != null && game.dummy === MY_SEAT;
+  const faceUp = REVEAL_ALL || seat === MY_SEAT || (game.dummyRevealed && seat === game.dummy)
+    || (iAmDummy && seat === game.declarer); // as dummy, see your partner's hand
   el.className = 'hand ' + (faceUp ? 'spread' : 'stacked'); // spread = readable cascade, stacked = compact pile
   el.innerHTML = '';
   let cards = game.hands[seat];

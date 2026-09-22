@@ -191,8 +191,8 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 /* Playable cards jump out with a distinctly lighter fill, a brighter outline, and a strong suit-colored glow.
    Non-playable cards keep their solid base tone, so nothing dims toward the felt and overlaps stay clean. */
 .hand .card:not(:disabled) { background: var(--card-face-lit); cursor: pointer; }
-.hand .card.face.red:not(:disabled)   { border-color: #ff6b7e; box-shadow: 0 0 12px 2px rgba(220, 86, 106, 0.75), 0 2px 8px rgba(0,0,0,0.6); }
-.hand .card.face.black:not(:disabled) { border-color: #ffffff; box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.55), 0 2px 8px rgba(0,0,0,0.6); }
+.hand .card.face.red:not(:disabled)   { border-color: var(--suit-red);   box-shadow: 0 0 12px 2px color-mix(in srgb, var(--suit-red) 70%, transparent), 0 2px 8px rgba(0,0,0,0.6); }
+.hand .card.face.black:not(:disabled) { border-color: var(--suit-white); box-shadow: 0 0 12px 2px color-mix(in srgb, var(--suit-white) 55%, transparent), 0 2px 8px rgba(0,0,0,0.6); }
 .hand .card:not(:disabled):hover { z-index: 20; background: var(--card-face-hover); }
 
 /* ---- Center trick, one card per seat around a cross ---- */

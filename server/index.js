@@ -232,9 +232,10 @@ function viewFor(room, seat, cid) {
   const revealAll = chosenSpectate || autoSpectate || isQueued || g.phase === 'done';
   const source = (g.phase === 'done' && room.originalHands) ? room.originalHands : g.hands;
   const iAmDummy = seat != null && g.dummy === seat; // if you're the dummy, you also see your partner (declarer)
+  const declarerSeat = g.contract ? g.contract.declarer : null;
   const hands = {};
   for (const s of SEATS) {
-    const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy) || (iAmDummy && s === g.declarer);
+    const canSee = revealAll || s === seat || (g.dummyRevealed && s === g.dummy) || (iAmDummy && s === declarerSeat);
     hands[s] = canSee ? source[s] : source[s].map(() => ({ hidden: true }));
   }
   const seatStatus = {};

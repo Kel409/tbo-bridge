@@ -198,18 +198,26 @@ function buildScoreboardHTML(rounds, log, rubber) {
   const header = rubberHeaderHTML(rubber);
   if (!rounds || rounds.length === 0) return header + '<p class="sb-empty">No completed deals yet.</p>';
 
-  const body = rounds.map((r) => {
+  let gameNo = 1;
+  const rows = [];
+  rounds.forEach((r, idx) => {
     const result = r.made ? `made${r.diff > 0 ? ` +${r.diff}` : ''}` : `down ${-r.diff}`;
     const contract = r.passedOut ? 'Passed out' : `${r.contract} by ${r.declarer} (${result})`;
     const flag = r.gameWonBy ? ` \u2605 game to ${r.gameWonBy}` : '';
-    return `<tr>
+    rows.push(`<tr>
       <td>${r.round}</td>
       <td>${contract}${flag}</td>
       <td>${r.tricks.NS}\u2013${r.tricks.EW}</td>
       <td>${r.points.NS.game}</td><td>${r.points.NS.bonus}</td>
       <td>${r.points.EW.game}</td><td>${r.points.EW.bonus}</td>
-    </tr>`;
-  }).join('');
+    </tr>`);
+    // A won game starts a fresh game next deal: mark the boundary so it's clear game points reset to 0.
+    if (r.gameWonBy && idx < rounds.length - 1) {
+      gameNo += 1;
+      rows.push(`<tr class="sb-divider"><td colspan="7">\u2014 Game ${gameNo} \u00b7 game points reset to 0 \u2014</td></tr>`);
+    }
+  });
+  const body = rows.join('');
 
   const ns = subtotalsFor(log, 'NS');
   const ew = subtotalsFor(log, 'EW');
@@ -246,7 +254,7 @@ function renderHand(game, seat, onHumanPlay) {
   const el = document.getElementById('hand-' + seat);
   const iAmDummy = MY_SEAT != null && game.dummy === MY_SEAT;
   const faceUp = REVEAL_ALL || seat === MY_SEAT || (game.dummyRevealed && seat === game.dummy)
-    || (iAmDummy && seat === game.declarer); // as dummy, see your partner's hand
+    || (iAmDummy && game.contract && seat === game.contract.declarer); // as dummy, see your partner's hand
   el.className = 'hand ' + (faceUp ? 'spread' : 'stacked'); // spread = readable cascade, stacked = compact pile
   el.innerHTML = '';
   let cards = game.hands[seat];
@@ -312,10 +320,7 @@ function dblTag(c) { return c && c.doubled === 2 ? ' XX' : (c && c.doubled === 1
 
 function renderAuction(game) {
   const el = document.getElementById('auction');
-  const parts = game.bids.map((b) => `${b.seat}: ${b.pass ? 'Pass' : b.double ? 'X' : b.redouble ? 'XX' : b.level + b.strain}`);
-  let line = parts.join('   ');
-  if (game.contract) line += `   |   Contract ${game.contract.level}${game.contract.strain}${dblTag(game.contract)} by ${game.contract.declarer}`;
-  el.textContent = line;
+  if (el) el.textContent = ''; // bid history removed from the top bar; see the Bids popup and status line
 }
 
 function vulLabel(vul) {

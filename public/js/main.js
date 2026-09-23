@@ -30,6 +30,7 @@ if (!clientId) {
 
 let state = null;           // latest snapshot: { game, rubber, rounds, log, seats, you }
 let selectedLevel = 1;      // local: bid level stepper
+let lastRound = null;       // detect a new deal to reset the stepper
 let scoreboardOpen = false; // local: is the scoreboard popup showing
 let bidsOpen = false;       // local: is the bid-order popup showing
 let seenRounds = 0;         // to auto-open the scoreboard when a deal finishes
@@ -67,6 +68,7 @@ socket.on('connect', () => socket.emit('hello', clientId));
 
 socket.on('state', (s) => {
   state = s;
+  if (s.game && s.game.round !== lastRound) { lastRound = s.game.round; selectedLevel = 1; } // new deal: reset the stepper
   if (s.rounds.length > seenRounds) { scoreboardOpen = true; seenRounds = s.rounds.length; }
   if (s.rounds.length < seenRounds) seenRounds = s.rounds.length; // new rubber reset
   const leaveBtn = document.getElementById('leave-seat');

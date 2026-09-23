@@ -544,3 +544,6 @@ button:hover:not(:disabled) { border-color: var(--color-accent); background: #24
 .note-msg { color: var(--color-text); font-size: 0.88rem; }
 .note-date { color: var(--color-muted); font-size: 0.76rem; margin-top: 0.15rem; }
 .note-date a { color: var(--color-accent-text); text-decoration: none; }
+
+/* Scoreboard game boundary: shows where a new game starts and game points reset. */
+.sb-divider td { text-align: center; color: var(--color-accent-text); font-size: 0.78rem; padding: 0.4rem 0; border-top: 1px solid var(--color-accent); border-bottom: 1px solid var(--color-accent); }
